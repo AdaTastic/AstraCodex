@@ -1,0 +1,88 @@
+.agentic-chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+}
+
+.agentic-chat-header h4 {
+  margin: 0;
+}
+
+.agentic-chat-transcript-wrapper {
+  flex: 1;
+  overflow: hidden;
+}
+
+.agentic-chat-transcript {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agentic-chat-row {
+  display: flex;
+}
+
+.agentic-chat-row.role-user { justify-content: flex-end; }
+.agentic-chat-row.role-assistant { justify-content: flex-start; }
+.agentic-chat-row.role-system { justify-content: center; }
+
+.agentic-chat-bubble {
+  max-width: 90%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.agentic-chat-row.role-user .agentic-chat-bubble {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-row.role-system .agentic-chat-bubble {
+  background: var(--background-modifier-hover);
+}
+
+.agentic-chat-label {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+
+.agentic-chat-text {
+  white-space: pre-wrap;
+}
+
+.agentic-chat-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agentic-chat-input {
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+}
+
+.agentic-chat-send-btn {
+  align-self: flex-end;
+}
+
+.agentic-chat-send-btn.is-loading {
+  opacity: 0.7;
+}
+
+.agentic-chat-status {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}

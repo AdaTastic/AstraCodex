@@ -1,0 +1,14 @@
+{
+  "name": "astra-codex",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild main.ts --bundle --outfile=main.js --platform=node --external:obsidian --format=cjs --target=es2018"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5",
+    "@types/node": "^22.7.4",
+    "obsidian": "^1.5.12"
+  }
+}

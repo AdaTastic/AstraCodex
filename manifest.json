@@ -1,0 +1,11 @@
+{
+  "id": "astra-codex",
+  "name": "AstraCodex",
+  "version": "0.0.1",
+  "minAppVersion": "1.5.0",
+  "description": "AstraCodex: dockable chat panel sending prompts to local Ollama (Qwen 2.5 32B instruct). Phase 1: display-only, no vault writes.",
+  "author": "Ada",
+  "authorUrl": "",
+  "isDesktopOnly": true,
+  "main": "main.js"
+}
