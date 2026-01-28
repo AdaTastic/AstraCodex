@@ -38,6 +38,7 @@ export class AgenticChatView extends ItemView {
   private activityLine: string | null = null;
   private loading = false;
   private loadingTimer: number | null = null;
+  private abortController: AbortController | null = null;
   private settings = defaultSettings();
   private stateMachine = new StateMachine(['idle', 'thinking', 'acting']);
   private stateMap: Record<string, string> = {};
@@ -137,7 +138,8 @@ export class AgenticChatView extends ItemView {
 
     this.sendBtn.addEventListener('click', () => this.handleSend());
     this.inputEl.addEventListener('keydown', (evt) => {
-      if (evt.key === 'Enter' && (evt.metaKey || evt.ctrlKey)) {
+      // Enter sends; Shift+Enter inserts a newline.
+      if (evt.key === 'Enter' && !evt.shiftKey) {
         evt.preventDefault();
         this.handleSend();
       }
@@ -167,9 +169,13 @@ export class AgenticChatView extends ItemView {
     this.loading = flag;
     this.updateControls();
     this.clearLoadingTimer();
+    if (!flag) {
+      this.abortController = null;
+    }
     if (flag) {
       this.loadingTimer = window.setTimeout(() => {
         this.loading = false;
+        this.abortController = null;
         this.updateControls();
       }, LOADING_TIMEOUT_MS);
     }
@@ -213,7 +219,33 @@ export class AgenticChatView extends ItemView {
         }
       }
 
-      bubble.createDiv({ cls: 'agentic-chat-text', text: msg.text });
+      if (msg.role === 'assistant' && msg.think) {
+        const thinkToggle = bubble.createDiv({
+          cls: 'agentic-chat-header-toggle',
+          text: msg.thinkExpanded ? 'Think ▾' : 'Think ▸'
+        });
+        thinkToggle.addEventListener('click', () => {
+          msg.thinkExpanded = !msg.thinkExpanded;
+          this.renderMessages();
+        });
+
+        if (msg.thinkExpanded) {
+          bubble.createDiv({ cls: 'agentic-chat-header-text', text: msg.think });
+        }
+      }
+
+      const displayText =
+        msg.text && msg.text.trim().length > 0
+          ? msg.text
+          : msg.role === 'assistant' && msg.think
+            ? '(No final answer was produced — expand Think)'
+            : msg.text;
+
+      if (msg.role === 'assistant' && msg.activityLine) {
+        bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
+      }
+
+      bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
     }
     this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
   }
@@ -221,12 +253,27 @@ export class AgenticChatView extends ItemView {
   private updateControls() {
     const trimmed = this.inputEl.value.trim();
     (this.sendBtn as any).toggleClass('is-loading', this.loading);
+    this.sendBtn.setText(this.loading ? 'Cancel' : 'Send');
     if (this.loading || trimmed.length === 0) {
-      (this.sendBtn as any).setAttr('disabled', 'true');
-      this.statusEl.setText(this.loading ? 'Sending...' : 'Disabled: enter text');
+      if (this.loading) {
+        this.sendBtn.removeAttribute('disabled');
+        this.statusEl.setText('Sending...');
+      } else {
+        (this.sendBtn as any).setAttr('disabled', 'true');
+        this.statusEl.setText('Disabled: enter text');
+      }
     } else {
       this.sendBtn.removeAttribute('disabled');
       this.statusEl.setText('Ready');
+    }
+  }
+
+  private cancelInFlight() {
+    if (!this.abortController) return;
+    try {
+      this.abortController.abort();
+    } catch {
+      // ignore
     }
   }
 
@@ -305,12 +352,26 @@ export class AgenticChatView extends ItemView {
     return { header, body };
   }
 
+  private extractFinal(text: string): { final: string | null; body: string } {
+    // Prefer explicit FINAL: marker to separate user-facing answer from other output.
+    const match = text.match(/(^|\n)\s*FINAL:\s*/);
+    if (!match || match.index === undefined) return { final: null, body: text };
+    const start = match.index + match[0].length;
+    const final = text.slice(start).trim();
+    const body = text.slice(0, match.index).trim();
+    return { final: final || null, body };
+  }
+
   private updateLastAssistantMessage(text: string) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === 'assistant') {
+      // Persist raw model output for debugging and future inspection.
+      last.rawText = text;
+
       // Hide any tool blocks from the visible transcript.
       const extracted = extractFencedToolCall(text);
       this.activityLine = extracted ? formatToolActivity(extracted.toolCall) : null;
+      last.activityLine = this.activityLine;
 
       const withoutToolBlocks = stripToolBlocks(text);
       const { think, rest } = this.extractThink(withoutToolBlocks);
@@ -320,21 +381,30 @@ export class AgenticChatView extends ItemView {
       }
 
       const { header, body } = this.extractHeaderAndBody(rest);
+      const { final } = this.extractFinal(body);
       if (header) {
         last.header = header;
-        last.text = this.activityLine ? `${this.activityLine}\n\n${body}` : body;
+        const chosen = final ?? body;
+        last.text = chosen;
       } else if (this.parsedHeader) {
         last.header = `STATE: ${this.parsedHeader.state}\nNEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        last.text = this.activityLine ? `${this.activityLine}\n\n${rest}` : rest;
+        const { final: finalFromRest } = this.extractFinal(rest);
+        const chosen = finalFromRest ?? rest;
+        last.text = chosen;
       } else {
-        last.text = this.activityLine ? `${this.activityLine}\n\n${rest}` : rest;
+        const { final: finalFromRest } = this.extractFinal(rest);
+        const chosen = finalFromRest ?? rest;
+        last.text = chosen;
       }
     }
     this.renderMessages();
   }
 
   private async handleSend() {
-    if (this.loading) return;
+    if (this.loading) {
+      this.cancelInFlight();
+      return;
+    }
     const prompt = this.inputEl.value.trim();
     if (!prompt) return;
 
@@ -347,6 +417,7 @@ export class AgenticChatView extends ItemView {
     await this.ensureChatNamed(prompt);
     this.inputEl.value = '';
     this.setLoading(true);
+    this.abortController = new AbortController();
 
     await this.saveActiveChat();
 
@@ -421,6 +492,7 @@ export class AgenticChatView extends ItemView {
         buildPrompt: buildChatPrompt,
         model: this.modelClient,
         toolRunner: this.toolRunner,
+        signal: this.abortController.signal,
         callbacks: {
           onTurnStart: ({ turn }) => {
             // Create a new assistant bubble per turn so retriggers don't overwrite.
@@ -459,6 +531,11 @@ export class AgenticChatView extends ItemView {
       this.stateMachine.setNeedsConfirmation(result.header.needsConfirmation);
       await this.saveActiveChat();
     } catch (err) {
+      // User cancelled.
+      if (err && typeof err === 'object' && (err as any).name === 'AbortError') {
+        this.pushMessage('system', 'Cancelled.');
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       this.pushMessage('system', `Error: ${msg}`);
     } finally {
@@ -597,17 +674,7 @@ export class AgenticChatView extends ItemView {
     this.renderChatOptions();
   }
 
-  private extractHeader(text: string): { header: string; body: string } | null {
-    const lines = text.split(/\r?\n/);
-    if (lines.length < 3) return null;
-    const headerLines = lines.slice(0, 3);
-    const isHeader = headerLines.every((line) =>
-      line.startsWith('STATE:') || line.startsWith('NEEDS_CONFIRMATION:') || line.startsWith('PROPOSED_ACTION:')
-    );
-    if (!isHeader) return null;
-    const body = lines.slice(3).join('\n').trimStart();
-    return { header: headerLines.join('\n'), body };
-  }
+  // Legacy fixed-line header extractor removed; we now parse keys directly.
 
   updateSettings(settings: AstraCodexSettings) {
     // Global settings update (model/baseUrl/etc). Keep current chat's non-global overrides.

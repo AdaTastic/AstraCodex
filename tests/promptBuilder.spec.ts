@@ -22,7 +22,8 @@ describe('PromptBuilder', () => {
   it('includes required sections and user message', () => {
     const prompt = buildPrompt({
       userMessage: 'hello',
-      settings: { ...settings, maxContextChars: 500 },
+      // The header contract now includes a tool-call schema example, so reserve enough room.
+      settings: { ...settings, maxContextChars: 2000 },
       coreRules
     });
 
@@ -30,6 +31,11 @@ describe('PromptBuilder', () => {
     expect(prompt).toContain('STATE:');
     expect(prompt).toContain('NEEDS_CONFIRMATION:');
     expect(prompt).not.toContain('PROPOSED_ACTION:');
+    expect(prompt).toContain('FINAL:');
+    expect(prompt).toContain('TOOL CALLS:');
+    expect(prompt).toContain('```tool');
+    expect(prompt).toContain('Do NOT describe tool calls in plain text');
+    expect(prompt).toContain('FILE READING GUIDANCE:');
     expect(prompt).toContain('CHARTER');
     expect(prompt).toContain('STATES');
     expect(prompt).toContain('VOICE');
@@ -41,7 +47,7 @@ describe('PromptBuilder', () => {
     const memory = '1234567890'.repeat(10);
     const prompt = buildPrompt({
       userMessage: 'hello',
-      settings: { ...settings, maxContextChars: 500, contextSliderValue: 100 },
+      settings: { ...settings, maxContextChars: 2000, contextSliderValue: 100 },
       coreRules,
       memory
     });
@@ -77,7 +83,7 @@ describe('PromptBuilder', () => {
   it('includes tool catalog when tools are provided', () => {
     const prompt = buildPrompt({
       userMessage: 'hello',
-      settings: { ...settings, maxContextChars: 500 },
+      settings: { ...settings, maxContextChars: 2000 },
       coreRules,
       tools: [
         { name: 'read', description: 'Read a file', params: { path: 'string' } }
@@ -92,7 +98,7 @@ describe('PromptBuilder', () => {
   it('includes conversation history when provided', () => {
     const prompt = buildPrompt({
       userMessage: 'Follow-up question',
-      settings: { ...settings, maxContextChars: 500 },
+      settings: { ...settings, maxContextChars: 2000 },
       coreRules,
       history: 'User: Hi\nAssistant: Hello'
     });

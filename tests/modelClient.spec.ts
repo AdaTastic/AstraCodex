@@ -49,4 +49,15 @@ describe('ModelClient streaming', () => {
     expect(result.header.state).toBe('idle');
     expect(result.header.needsConfirmation).toBe(false);
   });
+
+  it('passes AbortSignal into fetch options', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse([JSON.stringify({ done: true }) + '\n']));
+    const client = new ModelClient(settings, fetchMock as unknown as typeof fetch);
+    const controller = new AbortController();
+
+    await client.generateStream('prompt', () => undefined, { signal: controller.signal });
+
+    const call = fetchMock.mock.calls[0]?.[1] as any;
+    expect(call?.signal).toBe(controller.signal);
+  });
 });

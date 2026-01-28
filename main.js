@@ -90,9 +90,28 @@ var RuleManager = class {
 };
 
 // promptBuilder.ts
-var HEADER_REMINDER = `You MUST respond with a header in the format:
+var HEADER_REMINDER = `You MAY include a <think>...</think> block.
+
+You MUST respond with a header in the format:
 STATE: <state>
 NEEDS_CONFIRMATION: <true|false>
+
+TOOL CALLS:
+- If you need to use a tool, you MUST output exactly one fenced tool block in this exact format:
+
+\`\`\`tool
+{"name":"read","args":{"path":"..."},"retrigger":{"message":"..."}}
+\`\`\`
+
+- Do NOT describe tool calls in plain text (e.g. do NOT write \`reading: [current file]\`).
+- If you are not calling a tool, do not output any tool block.
+
+FILE READING GUIDANCE:
+- If the user asks to read a file by name/title, prefer calling the \`list\` tool first to select the correct full path.
+- Only call \`read\` after you have a specific vault path (usually from the \`list\` tool).
+
+Then you MUST output:
+FINAL: <your user-facing response text>
 `;
 var clamp = (value, maxChars) => {
   if (maxChars <= 0) return "";
@@ -243,13 +262,14 @@ var ModelClient = class {
     const baseFetch = fetchImpl != null ? fetchImpl : globalThis.fetch;
     this.fetchImpl = baseFetch ? baseFetch.bind(globalThis) : fetch;
   }
-  async generateStream(prompt, onDelta) {
+  async generateStream(prompt, onDelta, opts) {
     const contextLength = this.settings.contextSliderValue * 10;
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.settings.model, prompt, stream: true })
+      body: JSON.stringify({ model: this.settings.model, prompt, stream: true }),
+      signal: opts == null ? void 0 : opts.signal
     });
     if (!response.ok || !response.body) {
       const text = await response.text();
@@ -597,28 +617,42 @@ var runAgentLoop = async ({
   model,
   toolRunner,
   maxTurns = 8,
-  callbacks
+  callbacks,
+  signal
 }) => {
   var _a, _b, _c, _d, _e;
   let userMessage = initialUserMessage;
   let lastResponse = null;
   for (let turn = 0; turn < maxTurns; turn += 1) {
+    if (signal == null ? void 0 : signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, userMessage });
     const prompt = buildPrompt2(userMessage);
     (_b = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _b.call(callbacks);
     let streamed = "";
-    const response = await model.generateStream(prompt, (delta) => {
-      var _a2;
-      streamed += delta;
-      (_a2 = callbacks == null ? void 0 : callbacks.onAssistantDelta) == null ? void 0 : _a2.call(callbacks, delta, streamed);
-    });
+    const response = await model.generateStream(
+      prompt,
+      (delta) => {
+        var _a2;
+        streamed += delta;
+        (_a2 = callbacks == null ? void 0 : callbacks.onAssistantDelta) == null ? void 0 : _a2.call(callbacks, delta, streamed);
+      },
+      { signal }
+    );
     lastResponse = response;
     (_c = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _c.call(callbacks, response.header);
     const extracted = extractFencedToolCall(response.text);
     if (!extracted) break;
+    if (signal == null ? void 0 : signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
     (_d = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _d.call(callbacks, { name: executed.name, result: executed.result });
     if (!executed.retriggerMessage) break;
+    if (signal == null ? void 0 : signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     (_e = callbacks == null ? void 0 : callbacks.onRetrigger) == null ? void 0 : _e.call(callbacks, { message: executed.retriggerMessage });
     const toolResultText = typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2);
     userMessage = `${executed.retriggerMessage}
@@ -633,6 +667,9 @@ ${toolResultText}`;
 };
 
 // conversationHistory.ts
+var stripThinkBlocks = (text) => {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+};
 var buildConversationHistory = (messages, maxChars, opts) => {
   var _a, _b, _c;
   if (maxChars <= 0) return "";
@@ -648,7 +685,8 @@ var buildConversationHistory = (messages, maxChars, opts) => {
     if (!msg) continue;
     if (msg.role !== "user" && msg.role !== "assistant") continue;
     const prefix = msg.role === "user" ? "User: " : "Assistant: ";
-    const text = stripToolBlocks((_c = msg.text) != null ? _c : "").trim();
+    const base = stripToolBlocks((_c = msg.text) != null ? _c : "").trim();
+    const text = stripThinkBlocks(base);
     if (!text) continue;
     const chunk = `${prefix}${text}`;
     const separator = lines.length === 0 ? "" : "\n";
@@ -673,6 +711,7 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.activityLine = null;
     this.loading = false;
     this.loadingTimer = null;
+    this.abortController = null;
     this.settings = defaultSettings();
     this.stateMachine = new StateMachine(["idle", "thinking", "acting"]);
     this.stateMap = {};
@@ -759,7 +798,7 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.editRejectBtn = previewControls.createEl("button", { cls: "agentic-chat-reject-btn", text: "Reject" });
     this.sendBtn.addEventListener("click", () => this.handleSend());
     this.inputEl.addEventListener("keydown", (evt) => {
-      if (evt.key === "Enter" && (evt.metaKey || evt.ctrlKey)) {
+      if (evt.key === "Enter" && !evt.shiftKey) {
         evt.preventDefault();
         this.handleSend();
       }
@@ -785,9 +824,13 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.loading = flag;
     this.updateControls();
     this.clearLoadingTimer();
+    if (!flag) {
+      this.abortController = null;
+    }
     if (flag) {
       this.loadingTimer = window.setTimeout(() => {
         this.loading = false;
+        this.abortController = null;
         this.updateControls();
       }, LOADING_TIMEOUT_MS);
     }
@@ -825,19 +868,49 @@ var AgenticChatView = class extends import_obsidian.ItemView {
           bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.header });
         }
       }
-      bubble.createDiv({ cls: "agentic-chat-text", text: msg.text });
+      if (msg.role === "assistant" && msg.think) {
+        const thinkToggle = bubble.createDiv({
+          cls: "agentic-chat-header-toggle",
+          text: msg.thinkExpanded ? "Think \u25BE" : "Think \u25B8"
+        });
+        thinkToggle.addEventListener("click", () => {
+          msg.thinkExpanded = !msg.thinkExpanded;
+          this.renderMessages();
+        });
+        if (msg.thinkExpanded) {
+          bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.think });
+        }
+      }
+      const displayText = msg.text && msg.text.trim().length > 0 ? msg.text : msg.role === "assistant" && msg.think ? "(No final answer was produced \u2014 expand Think)" : msg.text;
+      if (msg.role === "assistant" && msg.activityLine) {
+        bubble.createDiv({ cls: "agentic-chat-tool-activity", text: msg.activityLine });
+      }
+      bubble.createDiv({ cls: "agentic-chat-text", text: displayText });
     }
     this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
   }
   updateControls() {
     const trimmed = this.inputEl.value.trim();
     this.sendBtn.toggleClass("is-loading", this.loading);
+    this.sendBtn.setText(this.loading ? "Cancel" : "Send");
     if (this.loading || trimmed.length === 0) {
-      this.sendBtn.setAttr("disabled", "true");
-      this.statusEl.setText(this.loading ? "Sending..." : "Disabled: enter text");
+      if (this.loading) {
+        this.sendBtn.removeAttribute("disabled");
+        this.statusEl.setText("Sending...");
+      } else {
+        this.sendBtn.setAttr("disabled", "true");
+        this.statusEl.setText("Disabled: enter text");
+      }
     } else {
       this.sendBtn.removeAttribute("disabled");
       this.statusEl.setText("Ready");
+    }
+  }
+  cancelInFlight() {
+    if (!this.abortController) return;
+    try {
+      this.abortController.abort();
+    } catch (e) {
     }
   }
   renderToolStatus(message) {
@@ -908,11 +981,21 @@ ${pending.preview.after}`);
     }
     return { header, body };
   }
+  extractFinal(text) {
+    const match = text.match(/(^|\n)\s*FINAL:\s*/);
+    if (!match || match.index === void 0) return { final: null, body: text };
+    const start = match.index + match[0].length;
+    const final = text.slice(start).trim();
+    const body = text.slice(0, match.index).trim();
+    return { final: final || null, body };
+  }
   updateLastAssistantMessage(text) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === "assistant") {
+      last.rawText = text;
       const extracted = extractFencedToolCall(text);
       this.activityLine = extracted ? formatToolActivity(extracted.toolCall) : null;
+      last.activityLine = this.activityLine;
       const withoutToolBlocks = stripToolBlocks(text);
       const { think, rest } = this.extractThink(withoutToolBlocks);
       if (think) {
@@ -920,27 +1003,30 @@ ${pending.preview.after}`);
         if (typeof last.thinkExpanded !== "boolean") last.thinkExpanded = false;
       }
       const { header, body } = this.extractHeaderAndBody(rest);
+      const { final } = this.extractFinal(body);
       if (header) {
         last.header = header;
-        last.text = this.activityLine ? `${this.activityLine}
-
-${body}` : body;
+        const chosen = final != null ? final : body;
+        last.text = chosen;
       } else if (this.parsedHeader) {
         last.header = `STATE: ${this.parsedHeader.state}
 NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        last.text = this.activityLine ? `${this.activityLine}
-
-${rest}` : rest;
+        const { final: finalFromRest } = this.extractFinal(rest);
+        const chosen = finalFromRest != null ? finalFromRest : rest;
+        last.text = chosen;
       } else {
-        last.text = this.activityLine ? `${this.activityLine}
-
-${rest}` : rest;
+        const { final: finalFromRest } = this.extractFinal(rest);
+        const chosen = finalFromRest != null ? finalFromRest : rest;
+        last.text = chosen;
       }
     }
     this.renderMessages();
   }
   async handleSend() {
-    if (this.loading) return;
+    if (this.loading) {
+      this.cancelInFlight();
+      return;
+    }
     const prompt = this.inputEl.value.trim();
     if (!prompt) return;
     if (this.toolRunner.getPendingEdit()) {
@@ -951,6 +1037,7 @@ ${rest}` : rest;
     await this.ensureChatNamed(prompt);
     this.inputEl.value = "";
     this.setLoading(true);
+    this.abortController = new AbortController();
     await this.saveActiveChat();
     try {
       await this.toolRegistry.loadTools();
@@ -1008,6 +1095,7 @@ ${rest}` : rest;
         buildPrompt: buildChatPrompt,
         model: this.modelClient,
         toolRunner: this.toolRunner,
+        signal: this.abortController.signal,
         callbacks: {
           onTurnStart: ({ turn }) => {
             this.pushMessage("assistant", "");
@@ -1042,6 +1130,10 @@ ${rest}` : rest;
       this.stateMachine.setNeedsConfirmation(result.header.needsConfirmation);
       await this.saveActiveChat();
     } catch (err) {
+      if (err && typeof err === "object" && err.name === "AbortError") {
+        this.pushMessage("system", "Cancelled.");
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       this.pushMessage("system", `Error: ${msg}`);
     } finally {
@@ -1166,17 +1258,7 @@ ${rest}` : rest;
     this.chatIndex = await this.chatStore.loadIndex();
     this.renderChatOptions();
   }
-  extractHeader(text) {
-    const lines = text.split(/\r?\n/);
-    if (lines.length < 3) return null;
-    const headerLines = lines.slice(0, 3);
-    const isHeader = headerLines.every(
-      (line) => line.startsWith("STATE:") || line.startsWith("NEEDS_CONFIRMATION:") || line.startsWith("PROPOSED_ACTION:")
-    );
-    if (!isHeader) return null;
-    const body = lines.slice(3).join("\n").trimStart();
-    return { header: headerLines.join("\n"), body };
-  }
+  // Legacy fixed-line header extractor removed; we now parse keys directly.
   updateSettings(settings) {
     this.settings = mergeChatSettings(settings, this.settings);
     this.modelClient = new ModelClient(this.settings);

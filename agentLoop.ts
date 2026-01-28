@@ -3,7 +3,11 @@ import type { ToolRunner } from './toolRunner';
 import { executeToolCall, extractFencedToolCall } from './toolOrchestrator';
 
 export type AgentLoopModel = {
-  generateStream: (prompt: string, onDelta: (text: string) => void) => Promise<ModelResponse>;
+  generateStream: (
+    prompt: string,
+    onDelta: (text: string) => void,
+    opts?: { signal?: AbortSignal }
+  ) => Promise<ModelResponse>;
 };
 
 export type AgentLoopCallbacks = {
@@ -23,6 +27,7 @@ export type RunAgentLoopArgs = {
   toolRunner: ToolRunner;
   maxTurns?: number;
   callbacks?: AgentLoopCallbacks;
+  signal?: AbortSignal;
 };
 
 /**
@@ -36,21 +41,29 @@ export const runAgentLoop = async ({
   model,
   toolRunner,
   maxTurns = 8,
-  callbacks
+  callbacks,
+  signal
 }: RunAgentLoopArgs): Promise<ModelResponse> => {
   let userMessage = initialUserMessage;
   let lastResponse: ModelResponse | null = null;
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     callbacks?.onTurnStart?.({ turn, userMessage });
     const prompt = buildPrompt(userMessage);
     callbacks?.onAssistantStart?.();
 
     let streamed = '';
-    const response = await model.generateStream(prompt, (delta) => {
+    const response = await model.generateStream(
+      prompt,
+      (delta) => {
       streamed += delta;
       callbacks?.onAssistantDelta?.(delta, streamed);
-    });
+      },
+      { signal }
+    );
 
     lastResponse = response;
     callbacks?.onHeader?.(response.header);
@@ -58,10 +71,17 @@ export const runAgentLoop = async ({
     const extracted = extractFencedToolCall(response.text);
     if (!extracted) break;
 
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
     callbacks?.onToolResult?.({ name: executed.name, result: executed.result });
 
     if (!executed.retriggerMessage) break;
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     callbacks?.onRetrigger?.({ message: executed.retriggerMessage });
 
     const toolResultText =

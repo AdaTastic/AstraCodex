@@ -7,6 +7,10 @@ export interface Message {
   headerExpanded?: boolean;
   think?: string;
   thinkExpanded?: boolean;
+  /** Raw streamed model output (includes tool blocks, header lines, etc.) */
+  rawText?: string;
+  /** Display-only tool activity line derived from a parsed tool block. */
+  activityLine?: string | null;
 }
 
 export interface ParsedHeader {

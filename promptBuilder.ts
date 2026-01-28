@@ -15,7 +15,29 @@ interface PromptInput {
   tools?: Array<{ name: string; description: string; params?: Record<string, string> }>;
 }
 
-const HEADER_REMINDER = `You MUST respond with a header in the format:\nSTATE: <state>\nNEEDS_CONFIRMATION: <true|false>\n`;
+const HEADER_REMINDER = `You MAY include a <think>...</think> block.
+
+You MUST respond with a header in the format:
+STATE: <state>
+NEEDS_CONFIRMATION: <true|false>
+
+TOOL CALLS:
+- If you need to use a tool, you MUST output exactly one fenced tool block in this exact format:
+
+\`\`\`tool
+{"name":"read","args":{"path":"..."},"retrigger":{"message":"..."}}
+\`\`\`
+
+- Do NOT describe tool calls in plain text (e.g. do NOT write \`reading: [current file]\`).
+- If you are not calling a tool, do not output any tool block.
+
+FILE READING GUIDANCE:
+- If the user asks to read a file by name/title, prefer calling the \`list\` tool first to select the correct full path.
+- Only call \`read\` after you have a specific vault path (usually from the \`list\` tool).
+
+Then you MUST output:
+FINAL: <your user-facing response text>
+`;
 
 const clamp = (value: string, maxChars: number): string => {
   if (maxChars <= 0) return '';

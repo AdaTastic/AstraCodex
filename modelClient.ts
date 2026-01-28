@@ -20,13 +20,20 @@ export class ModelClient {
     this.fetchImpl = baseFetch ? baseFetch.bind(globalThis) : fetch;
   }
 
-  async generateStream(prompt: string, onDelta: (text: string) => void): Promise<ModelResponse> {
+  async generateStream(
+    prompt: string,
+    onDelta: (text: string) => void,
+    opts?: {
+      signal?: AbortSignal;
+    }
+  ): Promise<ModelResponse> {
     const contextLength = this.settings.contextSliderValue * 10; // Convert slider value to a meaningful length
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: this.settings.model, prompt, stream: true })
+      body: JSON.stringify({ model: this.settings.model, prompt, stream: true }),
+      signal: opts?.signal
     });
 
     if (!response.ok || !response.body) {

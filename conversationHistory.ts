@@ -1,6 +1,11 @@
 import type { Message } from './types';
 import { stripToolBlocks } from './toolOrchestrator';
 
+const stripThinkBlocks = (text: string): string => {
+  // Remove any <think>...</think> blocks that might have leaked into message text.
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+};
+
 export const buildConversationHistory = (
   messages: Message[],
   maxChars: number,
@@ -30,7 +35,10 @@ export const buildConversationHistory = (
     if (msg.role !== 'user' && msg.role !== 'assistant') continue;
 
     const prefix = msg.role === 'user' ? 'User: ' : 'Assistant: ';
-    const text = stripToolBlocks(msg.text ?? '').trim();
+    // IMPORTANT: history should not include msg.think or rawText.
+    // We only include the user-facing msg.text, but we still strip tool blocks and any leaked <think> blocks.
+    const base = stripToolBlocks(msg.text ?? '').trim();
+    const text = stripThinkBlocks(base);
     if (!text) continue;
 
     const chunk = `${prefix}${text}`;
