@@ -43,6 +43,20 @@ describe('ToolRunner', () => {
     expect(result).toBe('content:note.md');
   });
 
+  it('provides activeFilePath in tool context when configured', async () => {
+    const adapterInstance = adapter();
+    const registry = {
+      getTool: () => ({
+        meta: { name: 'active_file', description: 'Active file', params: {} },
+        run: async (_args: unknown, ctx: { activeFilePath?: string | null }) => ctx.activeFilePath
+      })
+    } as any;
+
+    const runner = new ToolRunner(adapterInstance, () => true, undefined, registry, undefined, () => 'notes/today.md');
+    const result = await runner.executeTool('active_file', {});
+    expect(result).toBe('notes/today.md');
+  });
+
   it('stores and confirms a pending edit', async () => {
     const adapterInstance = adapter();
     const runner = new ToolRunner(adapterInstance, () => true);

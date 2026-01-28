@@ -8,7 +8,11 @@ import { ModelClient } from './modelClient';
 import { ToolRunner } from './toolRunner';
 import { ToolRegistry } from './toolRegistry';
 import { ChatStore, ChatMeta, ChatRecord } from './chatStore';
-import { restoreChatState } from './chatSession';
+import { mergeChatSettings, restoreChatState } from './chatSession';
+import { deriveChatTitle } from './chatTitle';
+import { runAgentLoop } from './agentLoop';
+import { extractFencedToolCall, formatToolActivity, stripToolBlocks } from './toolOrchestrator';
+import { buildConversationHistory } from './conversationHistory';
 
 export const VIEW_TYPE_AGENTIC_CHAT = 'agentic-chat-view';
 const LOADING_TIMEOUT_MS = 20000;
@@ -30,7 +34,8 @@ export class AgenticChatView extends ItemView {
   private chatExitBtn!: HTMLButtonElement;
   private confirmWrapper!: HTMLDivElement;
   private confirmBtn!: HTMLButtonElement;
-  private includeActiveNoteToggle!: HTMLInputElement;
+  private loadedRules: Record<string, string> = {};
+  private activityLine: string | null = null;
   private loading = false;
   private loadingTimer: number | null = null;
   private settings = defaultSettings();
@@ -39,6 +44,8 @@ export class AgenticChatView extends ItemView {
   private parsedHeader: ParsedHeader | null = null;
   private activeChatId: string | null = null;
   private chatIndex: ChatMeta[] = [];
+  private hasNamedActiveChat = false;
+  private lastDocument: { path: string; content: string } | null = null;
   private ruleManager = new RuleManager({
     read: (path) => this.app.vault.adapter.read(path),
     list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
@@ -65,11 +72,16 @@ export class AgenticChatView extends ItemView {
     () => this.stateMachine.canAct(),
     undefined,
     this.toolRegistry,
-    (message) => this.renderToolStatus(message)
+    (message) => this.renderToolStatus(message),
+    () => this.app.workspace.getActiveFile()?.path ?? null
   );
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, initialSettings?: AstraCodexSettings) {
     super(leaf);
+    if (initialSettings) {
+      this.settings = initialSettings;
+      this.modelClient = new ModelClient(this.settings);
+    }
   }
 
   getViewType() {
@@ -104,10 +116,7 @@ export class AgenticChatView extends ItemView {
     this.headerEl = headerRow.createDiv('agentic-chat-header-state');
     this.toolStatusEl = headerRow.createDiv('agentic-chat-tool-status');
 
-    const toggleRow = container.createDiv('agentic-chat-toggle-row');
-    const toggleLabel = toggleRow.createEl('label');
-    this.includeActiveNoteToggle = toggleLabel.createEl('input', { attr: { type: 'checkbox' } });
-    toggleLabel.appendText(' Include active note context');
+    // Keep the setting (includeActiveNote) but remove the UI checkbox.
 
     const inputWrapper = container.createDiv('agentic-chat-input-wrapper');
     this.inputEl = inputWrapper.createEl('textarea', { cls: 'agentic-chat-input', attr: { rows: '3', placeholder: 'Ask or instruct the assistant…' } });
@@ -143,12 +152,7 @@ export class AgenticChatView extends ItemView {
     this.chatDeleteBtn.addEventListener('click', () => this.deleteCurrentChat());
     this.chatExitBtn.addEventListener('click', () => this.exitChat());
     this.chatSelect.addEventListener('change', () => this.switchChat(this.chatSelect.value));
-    this.includeActiveNoteToggle.addEventListener('change', () => {
-      this.settings.includeActiveNote = this.includeActiveNoteToggle.checked;
-      this.refreshUI();
-    });
-
-    this.includeActiveNoteToggle.checked = this.settings.includeActiveNote;
+    // no checkbox
     await this.loadChatIndex();
     await this.loadStateConfiguration();
     await this.toolRegistry.loadTools();
@@ -264,14 +268,66 @@ export class AgenticChatView extends ItemView {
     this.renderMessages();
   }
 
+  private extractThink(text: string): { think: string | null; rest: string } {
+    // Capture the first <think>...</think> block.
+    const match = text.match(/<think>([\s\S]*?)<\/think>/i);
+    if (!match) return { think: null, rest: text };
+    const think = match[1].trim();
+    const rest = (text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)).trim();
+    return { think: think || null, rest };
+  }
+
+  private extractHeaderAndBody(text: string): { header: string | null; body: string } {
+    const lines = text.split(/\r?\n/);
+    let stateLine: string | null = null;
+    let needsLine: string | null = null;
+
+    // Search within the first N lines for header keys.
+    const scanLimit = Math.min(lines.length, 60);
+    for (let i = 0; i < scanLimit; i++) {
+      const line = lines[i].trim();
+      if (!stateLine && line.startsWith('STATE:')) stateLine = line;
+      if (!needsLine && line.startsWith('NEEDS_CONFIRMATION:')) needsLine = line;
+      if (stateLine && needsLine) break;
+    }
+
+    const headerLines = [stateLine, needsLine].filter(Boolean) as string[];
+    const header = headerLines.length ? headerLines.join('\n') : null;
+
+    // Remove those header lines from the body (first occurrence only).
+    let body = text;
+    for (const h of headerLines) {
+      const idx = body.indexOf(h);
+      if (idx !== -1) {
+        body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
+      }
+    }
+    return { header, body };
+  }
+
   private updateLastAssistantMessage(text: string) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === 'assistant') {
-      last.text = text;
-      const headerParts = this.extractHeader(text);
-      if (headerParts) {
-        last.header = headerParts.header;
-        last.text = headerParts.body;
+      // Hide any tool blocks from the visible transcript.
+      const extracted = extractFencedToolCall(text);
+      this.activityLine = extracted ? formatToolActivity(extracted.toolCall) : null;
+
+      const withoutToolBlocks = stripToolBlocks(text);
+      const { think, rest } = this.extractThink(withoutToolBlocks);
+      if (think) {
+        last.think = think;
+        if (typeof last.thinkExpanded !== 'boolean') last.thinkExpanded = false;
+      }
+
+      const { header, body } = this.extractHeaderAndBody(rest);
+      if (header) {
+        last.header = header;
+        last.text = this.activityLine ? `${this.activityLine}\n\n${body}` : body;
+      } else if (this.parsedHeader) {
+        last.header = `STATE: ${this.parsedHeader.state}\nNEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
+        last.text = this.activityLine ? `${this.activityLine}\n\n${rest}` : rest;
+      } else {
+        last.text = this.activityLine ? `${this.activityLine}\n\n${rest}` : rest;
       }
     }
     this.renderMessages();
@@ -288,32 +344,114 @@ export class AgenticChatView extends ItemView {
     }
 
     this.pushMessage('user', prompt);
+    await this.ensureChatNamed(prompt);
     this.inputEl.value = '';
     this.setLoading(true);
 
     await this.saveActiveChat();
 
     try {
+      // Reload tools each send so newly added tool scripts are immediately available.
+      await this.toolRegistry.loadTools();
+
       const coreRules = await this.ruleManager.loadCore();
       const memory = await this.ruleManager.loadMemory();
-      const activeNote = this.includeActiveNoteToggle.checked
-        ? await this.getActiveNoteContent()
-        : undefined;
+      await this.ensureBaseRulesLoaded();
+      const activeNote = this.settings.includeActiveNote ? await this.getActiveNoteContent() : undefined;
 
-      const assembledPrompt = buildPrompt({
-        userMessage: prompt,
-        settings: this.settings,
-        coreRules,
-        memory,
-        activeNote,
-        tools: this.toolRegistry.listTools()
-      });
+      const buildChatPrompt = (userMessage: string) => {
+        // 1) Compute fixed prompt length with no history & no last document.
+        const fixed = buildPrompt({
+          userMessage,
+          settings: this.settings,
+          coreRules,
+          rules: this.loadedRules,
+          memory,
+          history: '',
+          lastDocument: null,
+          activeNote,
+          tools: this.toolRegistry.listTools()
+        });
+
+        // 2) Decide how much room to reserve for the last document context.
+        const docContent = this.lastDocument?.content ?? '';
+        const docPath = this.lastDocument?.path ?? 'unknown';
+        const docHeader = docContent.trim()
+          ? `Last Document Context (${docPath}):\n`
+          : '';
+
+        const maxDocChars = Math.min(4000, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
+        const docSection = docContent.trim()
+          ? { path: docPath, content: docContent.slice(0, maxDocChars) }
+          : null;
+
+        // 3) Budget remaining space for conversation history.
+        const fixedWithDoc = buildPrompt({
+          userMessage,
+          settings: this.settings,
+          coreRules,
+          rules: this.loadedRules,
+          memory,
+          history: '',
+          lastDocument: docSection,
+          activeNote,
+          tools: this.toolRegistry.listTools()
+        });
+        const historyBudget = Math.max(0, this.settings.maxContextChars - fixedWithDoc.length);
+        const history = buildConversationHistory(this.messages, historyBudget, { excludeLatestUserMessage: true });
+
+        // 4) Build final prompt including both history and last document.
+        return buildPrompt({
+          userMessage,
+          settings: this.settings,
+          coreRules,
+          rules: this.loadedRules,
+          memory,
+          history,
+          lastDocument: docSection,
+          activeNote,
+          tools: this.toolRegistry.listTools()
+        });
+      };
 
       let assistantText = '';
-      this.pushMessage('assistant', '');
-      const result = await this.modelClient.generateStream(assembledPrompt, (delta) => {
-        assistantText += delta;
-        this.updateLastAssistantMessage(assistantText);
+
+      const result = await runAgentLoop({
+        initialUserMessage: prompt,
+        buildPrompt: buildChatPrompt,
+        model: this.modelClient,
+        toolRunner: this.toolRunner,
+        callbacks: {
+          onTurnStart: ({ turn }) => {
+            // Create a new assistant bubble per turn so retriggers don't overwrite.
+            this.pushMessage('assistant', '');
+          },
+          onAssistantStart: () => {
+            assistantText = '';
+          },
+          onAssistantDelta: (delta) => {
+            assistantText += delta;
+            this.updateLastAssistantMessage(assistantText);
+          },
+          onToolResult: ({ name, result }) => {
+            // If a rule file was read, cache it into loadedRules.
+            if (name === 'read') {
+              const readPath = this.extractLastReadPath(assistantText);
+              if (readPath?.startsWith('AstraCodex/Rules/') && typeof result === 'string') {
+                const ruleName = readPath.split('/').pop()?.replace(/\.md$/, '') ?? readPath;
+                this.loadedRules[ruleName] = result;
+              } else if (typeof result === 'string') {
+                // Store last non-rules document context for follow-up questions.
+                // Keep it small enough to reliably fit inside maxContextChars.
+                const maxDocChars = Math.min(4000, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
+                this.lastDocument = {
+                  path: readPath ?? 'unknown',
+                  content: result.slice(0, maxDocChars)
+                };
+              }
+            }
+          }
+        }
       });
 
       this.parsedHeader = result.header;
@@ -326,6 +464,32 @@ export class AgenticChatView extends ItemView {
     } finally {
       this.setLoading(false);
       this.refreshUI();
+    }
+  }
+
+  private async ensureBaseRulesLoaded() {
+    if (this.loadedRules.tool_protocol) return;
+    const base = await this.ruleManager.loadRules([
+      'tool_protocol',
+      'file_inspection',
+      'rules_index',
+      'consent_and_modes',
+      'memory_policy',
+      'uncertainty'
+    ]);
+    this.loadedRules = { ...this.loadedRules, ...base };
+  }
+
+  private extractLastReadPath(text: string): string | null {
+    // Looks for a fenced tool block and returns args.path if present.
+    const match = text.match(/```tool\s*([\s\S]*?)```/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      const path = parsed?.args?.path;
+      return typeof path === 'string' ? path : null;
+    } catch {
+      return null;
     }
   }
 
@@ -354,7 +518,7 @@ export class AgenticChatView extends ItemView {
   private async loadChatIndex() {
     this.chatIndex = await this.chatStore.loadIndex();
     if (this.chatIndex.length === 0) {
-      const record = this.chatStore.createChat('New Chat');
+      const record = this.chatStore.createChat('New Chat', this.settings);
       await this.chatStore.saveChat(record);
       this.chatIndex = [record.meta];
     }
@@ -377,17 +541,21 @@ export class AgenticChatView extends ItemView {
     const record = await this.chatStore.loadChat(chatId);
     const restored = restoreChatState(record);
     this.activeChatId = record.meta.id;
-    this.settings = restored.settings;
+    // Merge per-chat settings but keep global model/baseUrl from the view's current settings.
+    this.settings = mergeChatSettings(this.settings, restored.settings);
     this.parsedHeader = restored.state.header;
     this.stateMachine.setState(restored.state.state || 'idle');
     this.messages = restored.messages;
-    this.includeActiveNoteToggle.checked = this.settings.includeActiveNote;
+    this.lastDocument = restored.lastDocument ?? null;
+    this.hasNamedActiveChat = (record.meta.title ?? '').trim() !== '' && record.meta.title !== 'New Chat';
+    // no checkbox
+    this.loadedRules = {};
     this.renderChatOptions();
     this.refreshUI();
   }
 
   private async createNewChat() {
-    const record = this.chatStore.createChat('New Chat');
+    const record = this.chatStore.createChat('New Chat', this.settings);
     await this.chatStore.saveChat(record);
     this.chatIndex = await this.chatStore.loadIndex();
     await this.switchChat(record.meta.id);
@@ -421,7 +589,8 @@ export class AgenticChatView extends ItemView {
       },
       settings: this.settings,
       state: { header: this.parsedHeader, state: this.stateMachine.state },
-      messages: this.messages
+      messages: this.messages,
+      lastDocument: this.lastDocument
     };
     await this.chatStore.saveChat(record);
     this.chatIndex = await this.chatStore.loadIndex();
@@ -441,10 +610,29 @@ export class AgenticChatView extends ItemView {
   }
 
   updateSettings(settings: AstraCodexSettings) {
-    this.settings = settings;
+    // Global settings update (model/baseUrl/etc). Keep current chat's non-global overrides.
+    this.settings = mergeChatSettings(settings, this.settings);
     this.modelClient = new ModelClient(this.settings);
-    this.includeActiveNoteToggle.checked = this.settings.includeActiveNote;
+    // no checkbox
     this.refreshUI();
+  }
+
+  private async ensureChatNamed(firstUserMessage: string) {
+    if (!this.activeChatId) return;
+    if (this.hasNamedActiveChat) return;
+
+    const title = deriveChatTitle(firstUserMessage, 50);
+    const meta = this.chatIndex.find((c) => c.id === this.activeChatId);
+    if (!meta) return;
+    if (meta.title === title) {
+      this.hasNamedActiveChat = true;
+      return;
+    }
+    meta.title = title;
+    meta.updatedAt = new Date().toISOString();
+    await this.chatStore.saveIndex(this.chatIndex);
+    this.hasNamedActiveChat = true;
+    this.renderChatOptions();
   }
 
   private async loadStateConfiguration() {

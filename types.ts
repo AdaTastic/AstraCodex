@@ -5,12 +5,13 @@ export interface Message {
   text: string;
   header?: string;
   headerExpanded?: boolean;
+  think?: string;
+  thinkExpanded?: boolean;
 }
 
 export interface ParsedHeader {
   state: string;
   needsConfirmation: boolean;
-  proposedAction: string;
 }
 
 export interface OllamaResponse {

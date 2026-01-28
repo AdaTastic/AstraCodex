@@ -10,7 +10,7 @@ export default class AstraCodexPlugin extends Plugin {
 
     this.registerView(
       VIEW_TYPE_AGENTIC_CHAT,
-      (leaf: WorkspaceLeaf) => new AgenticChatView(leaf)
+      (leaf: WorkspaceLeaf) => new AgenticChatView(leaf, this.settings)
     );
 
     this.addCommand({

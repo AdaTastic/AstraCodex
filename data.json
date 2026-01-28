@@ -1,0 +1,8 @@
+{
+  "baseUrl": "http://127.0.0.1:11434",
+  "model": "hf.co/bartowski/THUDM_GLM-Z1-32B-0414-GGUF:Q4_K_M",
+  "includeActiveNote": true,
+  "maxContextChars": 20000,
+  "maxMemoryChars": 10000,
+  "contextSliderValue": 50
+}

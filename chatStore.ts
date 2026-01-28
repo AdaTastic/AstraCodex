@@ -1,4 +1,5 @@
 import type { AstraCodexSettings } from './settings';
+import { defaultSettings } from './settings';
 import type { Message, ParsedHeader } from './types';
 
 export type ChatMeta = { id: string; title: string; createdAt: string; updatedAt: string };
@@ -7,6 +8,7 @@ export type ChatRecord = {
   settings: AstraCodexSettings;
   state: { header: ParsedHeader | null; state: string };
   messages: Message[];
+  lastDocument?: { path: string; content: string } | null;
 };
 
 type VaultAdapter = {
@@ -27,20 +29,16 @@ export class ChatStore {
     this.adapter = adapter;
   }
 
-  createChat(title: string): ChatRecord {
+  createChat(title: string, settings: AstraCodexSettings): ChatRecord {
     const now = new Date().toISOString();
     const id = `chat-${now.replace(/[:.]/g, '-')}`;
     return {
       meta: { id, title, createdAt: now, updatedAt: now },
-      settings: {
-        baseUrl: '',
-        model: '',
-        includeActiveNote: false,
-        maxContextChars: 0,
-        maxMemoryChars: 0
-      },
+      settings,
       state: { header: null, state: 'idle' },
       messages: []
+      ,
+      lastDocument: null
     };
   }
 

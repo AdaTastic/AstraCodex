@@ -7,7 +7,8 @@ const settings: AstraCodexSettings = {
   model: 'model',
   includeActiveNote: false,
   maxContextChars: 8000,
-  maxMemoryChars: 2000
+  maxMemoryChars: 2000,
+  contextSliderValue: 50
 };
 
 const createStreamResponse = (chunks: string[]) => {
@@ -34,7 +35,7 @@ const createStreamResponse = (chunks: string[]) => {
 describe('ModelClient streaming', () => {
   it('streams deltas and parses header', async () => {
     const chunks = [
-      JSON.stringify({ response: 'STATE: idle\nNEEDS_CONFIRMATION: false\nPROPOSED_ACTION: none\nHello ' }) + '\n',
+      JSON.stringify({ response: 'STATE: idle\nNEEDS_CONFIRMATION: false\nHello ' }) + '\n',
       JSON.stringify({ response: 'world' }) + '\n',
       JSON.stringify({ done: true }) + '\n'
     ];

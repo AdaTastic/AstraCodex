@@ -12,6 +12,7 @@ type ToolRegistry = {
 type ToolContext = {
   vault: ToolRunnerAdapter;
   log: (message: string) => void;
+  activeFilePath?: string | null;
 };
 
 type PendingEdit = {
@@ -25,6 +26,7 @@ export class ToolRunner {
   private canAct: () => boolean;
   private now: () => string;
   private registry?: ToolRegistry;
+  private getActiveFilePath?: () => string | null;
   private pendingEdit: PendingEdit | null = null;
   private onToolActivity?: (message: string) => void;
 
@@ -33,13 +35,15 @@ export class ToolRunner {
     canAct: () => boolean,
     now: () => string = () => new Date().toISOString(),
     registry?: ToolRegistry,
-    onToolActivity?: (message: string) => void
+    onToolActivity?: (message: string) => void,
+    getActiveFilePath?: () => string | null
   ) {
     this.adapter = adapter;
     this.canAct = canAct;
     this.now = now;
     this.registry = registry;
     this.onToolActivity = onToolActivity;
+    this.getActiveFilePath = getActiveFilePath;
   }
 
   async readFile(path: string): Promise<string> {
@@ -83,7 +87,8 @@ export class ToolRunner {
     this.validateArgs(args, tool.meta.params ?? {});
     const ctx: ToolContext = {
       vault: this.adapter,
-      log: (message: string) => console.log(`[Tool:${name}] ${message}`)
+      log: (message: string) => console.log(`[Tool:${name}] ${message}`),
+      activeFilePath: this.getActiveFilePath ? this.getActiveFilePath() : null
     };
     return tool.run(args, ctx);
   }

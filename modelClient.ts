@@ -3,7 +3,6 @@ import type { AstraCodexSettings } from './settings';
 export interface ParsedHeader {
   state: string;
   needsConfirmation: boolean;
-  proposedAction: string;
 }
 
 export interface ModelResponse {
@@ -76,11 +75,12 @@ export class ModelClient {
 export const parseHeader = (text: string): ParsedHeader => {
   const header: ParsedHeader = {
     state: 'idle',
-    needsConfirmation: false,
-    proposedAction: ''
+    needsConfirmation: false
   };
 
-  const lines = text.split(/\r?\n/).slice(0, 6);
+  // Parse by key rather than fixed line count. Scan a small prefix to avoid
+  // accidentally picking up tool output.
+  const lines = text.split(/\r?\n/).slice(0, 40);
   for (const line of lines) {
     if (line.startsWith('STATE:')) {
       header.state = line.replace('STATE:', '').trim() || header.state;
@@ -88,9 +88,6 @@ export const parseHeader = (text: string): ParsedHeader => {
     if (line.startsWith('NEEDS_CONFIRMATION:')) {
       const value = line.replace('NEEDS_CONFIRMATION:', '').trim().toLowerCase();
       header.needsConfirmation = value === 'true';
-    }
-    if (line.startsWith('PROPOSED_ACTION:')) {
-      header.proposedAction = line.replace('PROPOSED_ACTION:', '').trim();
     }
   }
 

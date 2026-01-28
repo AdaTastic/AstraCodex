@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ChatStore } from '../chatStore';
+import { DEFAULT_SETTINGS } from '../settings';
 
 const adapter = () => {
   const files = new Map<string, string>();
@@ -23,10 +24,17 @@ const adapter = () => {
 };
 
 describe('ChatStore', () => {
+  it('initializes new chats with the provided settings', async () => {
+    const store = new ChatStore(adapter());
+    const chat = store.createChat('Defaults Chat', DEFAULT_SETTINGS);
+
+    expect(chat.settings).toEqual(DEFAULT_SETTINGS);
+  });
+
   it('creates, saves, loads, and deletes chats', async () => {
     const store = new ChatStore(adapter());
 
-    const chat = store.createChat('Test Chat');
+    const chat = store.createChat('Test Chat', DEFAULT_SETTINGS);
     await store.saveChat(chat);
 
     const loaded = await store.loadChat(chat.meta.id);
@@ -39,7 +47,7 @@ describe('ChatStore', () => {
   it('updates index when saving chats', async () => {
     const store = new ChatStore(adapter());
 
-    const chat = store.createChat('Index Chat');
+    const chat = store.createChat('Index Chat', DEFAULT_SETTINGS);
     await store.saveChat(chat);
 
     const index = await store.loadIndex();
