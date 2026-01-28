@@ -9,6 +9,42 @@
   margin: 0;
 }
 
+.agentic-chat-session-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.agentic-chat-session-select {
+  min-width: 160px;
+}
+
+.agentic-chat-header-row,
+.agentic-chat-toggle-row,
+.agentic-chat-confirm-wrapper {
+  padding: 6px 12px;
+}
+
+.agentic-chat-header-state {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.agentic-chat-tool-status {
+  font-size: 12px;
+  color: var(--text-accent);
+  margin-top: 2px;
+}
+
+.agentic-chat-toggle-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .agentic-chat-transcript-wrapper {
   flex: 1;
   overflow: hidden;
@@ -62,6 +98,28 @@
   white-space: pre-wrap;
 }
 
+.agentic-chat-header-toggle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.agentic-chat-header-text {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  padding: 4px 6px;
+  border-left: 2px solid var(--background-modifier-border);
+  margin-bottom: 6px;
+}
+
+.agentic-chat-transcript,
+.agentic-chat-bubble,
+.agentic-chat-text {
+  user-select: text;
+}
+
 .agentic-chat-input-wrapper {
   display: flex;
   flex-direction: column;
@@ -85,4 +143,49 @@
 .agentic-chat-status {
   font-size: 0.85rem;
   opacity: 0.9;
+}
+
+.agentic-chat-confirm-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.agentic-chat-edit-preview {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 12px;
+  background: var(--background-secondary);
+}
+
+.agentic-chat-edit-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.agentic-chat-edit-body {
+  white-space: pre-wrap;
+  font-family: var(--font-monospace);
+  font-size: 0.8rem;
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 8px;
+  margin-bottom: 8px;
+}
+
+.agentic-chat-edit-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.agentic-chat-reject-btn {
+  background: var(--background-modifier-hover);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
 }

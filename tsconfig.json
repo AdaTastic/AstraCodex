@@ -12,7 +12,7 @@
     "jsx": "react",
     "jsxFactory": "React.createElement",
     "jsxFragmentFactory": "React.Fragment",
-    "types": ["node", "obsidian"]
+    "types": ["node", "obsidian", "vitest/globals"]
   },
-  "include": ["./*.ts", "./*.tsx"]
+  "include": ["./*.ts", "./*.tsx", "tests/*.ts"]
 }
