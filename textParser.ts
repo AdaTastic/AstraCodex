@@ -32,14 +32,12 @@ export const extractHeaderAndBody = (text: string): { header: string | null; bod
   const headerLines = [stateLine, needsLine].filter(Boolean) as string[];
   const header = headerLines.length ? headerLines.join('\n') : null;
 
-  // Remove those header lines from the body (first occurrence only).
+  // Remove header lines from the body using regex (handles whitespace variations)
   let body = text;
-  for (const h of headerLines) {
-    const idx = body.indexOf(h);
-    if (idx !== -1) {
-      body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
-    }
-  }
+  body = body.replace(/^STATE:\s*[a-zA-Z_]+\s*\n?/gim, '');
+  body = body.replace(/^NEEDS_CONFIRMATION:\s*(true|false)\s*\n?/gim, '');
+  body = body.replace(/\n{3,}/g, '\n\n').trim();
+  
   return { header, body };
 };
 

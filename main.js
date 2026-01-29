@@ -119,7 +119,8 @@ FILE READING GUIDANCE:
 - If the user asks to read a file by name/title, call \`list\` first to find the correct path.
 - Only call \`read\` after you have a specific vault path.
 
-Your response should be clean and conversational - no headers, no prefixes.
+Your response should be clean and conversational.
+DO NOT output "STATE:" or "NEEDS_CONFIRMATION:" headers - state is tracked internally.
 `;
 var clamp = (value, maxChars) => {
   if (maxChars <= 0) return "";
@@ -601,10 +602,12 @@ var isExtractionError = (result) => {
   return result !== null && "error" in result;
 };
 var parseToolJson = (rawJson) => {
+  var _a;
   try {
     const parsed = JSON.parse(rawJson);
     if (!(parsed == null ? void 0 : parsed.name) || typeof parsed.name !== "string") return null;
-    const args = parsed.arguments && typeof parsed.arguments === "object" ? parsed.arguments : {};
+    const argsSource = (_a = parsed.arguments) != null ? _a : parsed.args;
+    const args = argsSource && typeof argsSource === "object" ? argsSource : {};
     return {
       toolCall: {
         name: parsed.name,
@@ -838,12 +841,9 @@ var extractHeaderAndBody = (text) => {
   const headerLines = [stateLine, needsLine].filter(Boolean);
   const header = headerLines.length ? headerLines.join("\n") : null;
   let body = text;
-  for (const h of headerLines) {
-    const idx = body.indexOf(h);
-    if (idx !== -1) {
-      body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
-    }
-  }
+  body = body.replace(/^STATE:\s*[a-zA-Z_]+\s*\n?/gim, "");
+  body = body.replace(/^NEEDS_CONFIRMATION:\s*(true|false)\s*\n?/gim, "");
+  body = body.replace(/\n{3,}/g, "\n\n").trim();
   return { header, body };
 };
 var extractFinal = (text) => {

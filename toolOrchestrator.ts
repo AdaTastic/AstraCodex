@@ -31,15 +31,18 @@ export const isExtractionError = (result: ExtractionResult | null): result is Ex
  */
 const parseToolJson = (rawJson: string): ExtractedToolCall | null => {
   try {
-    const parsed = JSON.parse(rawJson) as ToolCall;
+    const parsed = JSON.parse(rawJson) as Record<string, unknown>;
     if (!parsed?.name || typeof parsed.name !== 'string') return null;
-    const args = parsed.arguments && typeof parsed.arguments === 'object' 
-      ? (parsed.arguments as Record<string, unknown>) 
+    
+    // Accept both "arguments" (OpenAI standard) and "args" (GLM habit)
+    const argsSource = parsed.arguments ?? parsed.args;
+    const args = argsSource && typeof argsSource === 'object' 
+      ? (argsSource as Record<string, unknown>) 
       : {};
 
     return {
       toolCall: {
-        name: parsed.name,
+        name: parsed.name as string,
         arguments: args
       },
       rawBlock: rawJson

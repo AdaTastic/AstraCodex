@@ -43,7 +43,8 @@ FILE READING GUIDANCE:
 - If the user asks to read a file by name/title, call \`list\` first to find the correct path.
 - Only call \`read\` after you have a specific vault path.
 
-Your response should be clean and conversational - no headers, no prefixes.
+Your response should be clean and conversational.
+DO NOT output "STATE:" or "NEEDS_CONFIRMATION:" headers - state is tracked internally.
 `;
 
 const clamp = (value: string, maxChars: number): string => {
