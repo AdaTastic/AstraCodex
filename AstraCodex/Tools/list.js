@@ -23,7 +23,7 @@ module.exports = {
     if (matches.length === 0) {
       return {
         ok: false,
-        message: `No vault files matched "${q}". Make sure the path or filename exists.`,
+        message: `No vault files matched "${q}". Maybe try listing all files and folders to try and find it.`,
         query: q,
         count: 0
       };
