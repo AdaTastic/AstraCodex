@@ -100,11 +100,13 @@ const renderToolResult = (container: HTMLElement, result: NonNullable<Extract<Me
   const resultEl = (container as any).createDiv({ cls: 'agentic-chat-tool-result' });
   
   if (result.type === 'list' && result.items) {
-    // Show file list
+    // Show file list with folder/file icons
     const listEl = resultEl.createDiv({ cls: 'agentic-chat-file-list' });
     const displayItems = result.items.slice(0, 10); // Limit display
     for (const item of displayItems) {
-      listEl.createDiv({ cls: 'agentic-chat-file-item', text: `├─ ${item}` });
+      const isFolder = item.endsWith('/');
+      const icon = isFolder ? '📁' : '📄';
+      listEl.createDiv({ cls: 'agentic-chat-file-item', text: `├─ ${icon} ${item}` });
     }
     if (result.items.length > 10) {
       listEl.createDiv({ cls: 'agentic-chat-file-item', text: `└─ ... and ${result.items.length - 10} more` });

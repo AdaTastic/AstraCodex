@@ -849,24 +849,36 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.lastDocument = null;
     this.ruleManager = new RuleManager({
       read: (path) => this.app.vault.adapter.read(path),
-      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+        ...list.files,
+        ...list.folders.map((f) => f.endsWith("/") ? f : f + "/")
+      ])
     });
     this.chatStore = new ChatStore({
       read: (path) => this.app.vault.adapter.read(path),
       write: (path, content) => this.app.vault.adapter.write(path, content),
       remove: (path) => this.app.vault.adapter.remove(path),
       exists: (path) => this.app.vault.adapter.exists(path),
-      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+        ...list.files,
+        ...list.folders.map((f) => f.endsWith("/") ? f : f + "/")
+      ])
     });
     this.toolRegistry = new ToolRegistry({
       read: (path) => this.app.vault.adapter.read(path),
-      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+        ...list.files,
+        ...list.folders.map((f) => f.endsWith("/") ? f : f + "/")
+      ])
     });
     this.modelClient = new ModelClient(this.settings);
     this.toolRunner = new ToolRunner(
       {
         read: (path) => this.app.vault.adapter.read(path),
-        list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files),
+        list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+          ...list.files,
+          ...list.folders.map((f) => f.endsWith("/") ? f : f + "/")
+        ]),
         write: (path, content) => this.app.vault.adapter.write(path, content),
         append: (path, content) => this.app.vault.adapter.append(path, content)
       },

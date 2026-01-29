@@ -53,24 +53,36 @@ export class AgenticChatView extends ItemView {
   private lastDocument: { path: string; content: string } | null = null;
   private ruleManager = new RuleManager({
     read: (path) => this.app.vault.adapter.read(path),
-    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+      ...list.files,
+      ...list.folders.map(f => f.endsWith('/') ? f : f + '/')
+    ])
   });
   private chatStore = new ChatStore({
     read: (path) => this.app.vault.adapter.read(path),
     write: (path, content) => this.app.vault.adapter.write(path, content),
     remove: (path) => this.app.vault.adapter.remove(path),
     exists: (path) => this.app.vault.adapter.exists(path),
-    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+      ...list.files,
+      ...list.folders.map(f => f.endsWith('/') ? f : f + '/')
+    ])
   });
   private toolRegistry = new ToolRegistry({
     read: (path) => this.app.vault.adapter.read(path),
-    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files)
+    list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+      ...list.files,
+      ...list.folders.map(f => f.endsWith('/') ? f : f + '/')
+    ])
   });
   private modelClient = new ModelClient(this.settings);
   private toolRunner = new ToolRunner(
     {
       read: (path) => this.app.vault.adapter.read(path),
-      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => list.files),
+      list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
+        ...list.files,
+        ...list.folders.map(f => f.endsWith('/') ? f : f + '/')
+      ]),
       write: (path, content) => this.app.vault.adapter.write(path, content),
       append: (path, content) => this.app.vault.adapter.append(path, content)
     },
