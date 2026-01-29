@@ -75,6 +75,10 @@ export class ToolRunner {
     await this.adapter.append('AstraCodex/Memory.md', entry);
   }
 
+  canAct(): boolean {
+    return this.canAct();
+  }
+
   async executeTool(name: string, args: Record<string, unknown>) {
     if (!this.registry) {
       throw new Error('Tool registry is not configured.');

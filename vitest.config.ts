@@ -4,6 +4,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.spec.ts'],
-    globals: true
+    globals: true,
+    setupFiles: ['tests/setup.ts']
+  },
+  resolve: {
+    alias: {
+      'obsidian': './node_modules/obsidian'
+    }
   }
 });

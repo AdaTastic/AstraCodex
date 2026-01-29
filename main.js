@@ -362,6 +362,9 @@ var ToolRunner = class {
 `;
     await this.adapter.append("AstraCodex/Memory.md", entry);
   }
+  canAct() {
+    return this.canAct();
+  }
   async executeTool(name, args) {
     var _a;
     if (!this.registry) {
@@ -989,6 +992,16 @@ ${pending.preview.after}`);
     const body = text.slice(0, match.index).trim();
     return { final: final || null, body };
   }
+  extractRetriggerMessage(text) {
+    var _a, _b;
+    const { header } = this.extractHeaderAndBody(text);
+    if (!header) return null;
+    const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
+    if (retriggerMatch) {
+      return (_b = (_a = retriggerMatch[2]) == null ? void 0 : _a.trim()) != null ? _b : null;
+    }
+    return null;
+  }
   updateLastAssistantMessage(text) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === "assistant") {
@@ -1071,6 +1084,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
           rules: this.loadedRules,
           memory,
           history: "",
+          // FIX: Pass actual history
           lastDocument: docSection,
           activeNote,
           tools: this.toolRegistry.listTools()
@@ -1084,6 +1098,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
           rules: this.loadedRules,
           memory,
           history,
+          // FIX: Pass actual history
           lastDocument: docSection,
           activeNote,
           tools: this.toolRegistry.listTools()
@@ -1120,6 +1135,26 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
                   path: readPath != null ? readPath : "unknown",
                   content: result2.slice(0, maxDocChars)
                 };
+              }
+            }
+            const { header } = this.extractHeaderAndBody(assistantText);
+            if (header) {
+              const stateMatch = header.match(/STATE:\s*([a-zA-Z_]+)/);
+              const needsConfirmMatch = header.match(/NEEDS_CONFIRMATION:\s*(true|false)/);
+              if (stateMatch) {
+                const newState = stateMatch[1];
+                this.applyState(newState);
+              }
+              if (needsConfirmMatch) {
+                this.stateMachine.setNeedsConfirmation(needsConfirmMatch[1] === "true");
+              }
+            }
+            const retriggerMessage = this.extractRetriggerMessage(assistantText);
+            if (retriggerMessage) {
+              if (this.stateMachine.canAct()) {
+                this.pushMessage("user", retriggerMessage);
+              } else {
+                this.pushMessage("assistant", "I can't complete that action right now. Please let me know what state I should be in to proceed.");
               }
             }
           }
@@ -1407,7 +1442,7 @@ var AstraCodexSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     new import_obsidian2.Setting(containerEl).setName("Max context length").setDesc("Maximum characters of combined prompt context.").addSlider(
-      (slider) => slider.setLimits(1e3, 2e4, 500).setValue(this.plugin.settings.maxContextChars).setDynamicTooltip().onChange(async (value) => {
+      (slider) => slider.setLimits(1e3, 12e4, 500).setValue(this.plugin.settings.maxContextChars).setDynamicTooltip().onChange(async (value) => {
         this.plugin.settings.maxContextChars = value;
         await this.plugin.saveSettings();
       })

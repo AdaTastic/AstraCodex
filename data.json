@@ -1,8 +1,8 @@
 {
   "baseUrl": "http://127.0.0.1:11434",
-  "model": "qwen3-coder-writing",
+  "model": "glm47-tools-16k",
   "includeActiveNote": true,
-  "maxContextChars": 20000,
+  "maxContextChars": 91000,
   "maxMemoryChars": 10000,
   "contextSliderValue": 50
 }

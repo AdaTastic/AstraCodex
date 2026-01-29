@@ -106,7 +106,7 @@ class AstraCodexSettingTab extends PluginSettingTab {
       .setDesc('Maximum characters of combined prompt context.')
       .addSlider((slider) =>
         slider
-          .setLimits(1000, 20000, 500)
+          .setLimits(1000, 120000, 500)
           .setValue(this.plugin.settings.maxContextChars)
           .setDynamicTooltip()
           .onChange(async (value) => {

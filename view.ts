@@ -362,6 +362,18 @@ export class AgenticChatView extends ItemView {
     return { final: final || null, body };
   }
 
+  
+  private extractRetriggerMessage(text: string): string | null {
+    // Extract retrigger message from STATE: RETRIGGER header.
+    const { header } = this.extractHeaderAndBody(text);
+    if (!header) return null;
+    const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
+    if (retriggerMatch) {
+      return retriggerMatch[2]?.trim() ?? null;
+    }
+    return null;
+  }
+
   private updateLastAssistantMessage(text: string) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === 'assistant') {
@@ -463,7 +475,7 @@ export class AgenticChatView extends ItemView {
           coreRules,
           rules: this.loadedRules,
           memory,
-          history: '',
+          history: '', // FIX: Pass actual history
           lastDocument: docSection,
           activeNote,
           tools: this.toolRegistry.listTools()
@@ -478,7 +490,7 @@ export class AgenticChatView extends ItemView {
           coreRules,
           rules: this.loadedRules,
           memory,
-          history,
+          history, // FIX: Pass actual history
           lastDocument: docSection,
           activeNote,
           tools: this.toolRegistry.listTools()
@@ -520,6 +532,33 @@ export class AgenticChatView extends ItemView {
                   path: readPath ?? 'unknown',
                   content: result.slice(0, maxDocChars)
                 };
+              }
+            }
+            
+            // Update state machine based on the last assistant message header.
+            const { header } = this.extractHeaderAndBody(assistantText);
+            if (header) {
+              const stateMatch = header.match(/STATE:\s*([a-zA-Z_]+)/);
+              const needsConfirmMatch = header.match(/NEEDS_CONFIRMATION:\s*(true|false)/);
+              if (stateMatch) {
+                const newState = stateMatch[1];
+                this.applyState(newState);
+              }
+              if (needsConfirmMatch) {
+                this.stateMachine.setNeedsConfirmation(needsConfirmMatch[1] === 'true');
+              }
+            }
+            
+            // Handle retrigger messages.
+            const retriggerMessage = this.extractRetriggerMessage(assistantText);
+            if (retriggerMessage) {
+              // Only process retrigger if state machine allows action.
+              if (this.stateMachine.canAct()) {
+                // Send the retrigger message back to the model.
+                this.pushMessage('user', retriggerMessage);
+              } else {
+                // Can't act, tell the model to try again with a valid state.
+                this.pushMessage('assistant', 'I can\'t complete that action right now. Please let me know what state I should be in to proceed.');
               }
             }
           }
