@@ -264,6 +264,31 @@ var StateMachine = class {
 };
 
 // modelClient.ts
+var STOP_SEQUENCES = [
+  "User:",
+  "\nUser:",
+  "Human:",
+  "\nHuman:",
+  "Memory:",
+  "\nMemory:"
+];
+var sanitizeResponse = (text) => {
+  const markers = [
+    /\nUser: /,
+    /\nHuman: /,
+    /\nMemory: /,
+    /\nAssistant: /
+    // Model shouldn't label its own continuation
+  ];
+  let truncateAt = text.length;
+  for (const marker of markers) {
+    const match = text.match(marker);
+    if ((match == null ? void 0 : match.index) !== void 0 && match.index < truncateAt) {
+      truncateAt = match.index;
+    }
+  }
+  return text.slice(0, truncateAt);
+};
 var ModelClient = class {
   constructor(settings, fetchImpl) {
     this.settings = settings;
@@ -280,7 +305,11 @@ var ModelClient = class {
         model: this.settings.model,
         prompt,
         stream: true,
-        options: { num_ctx: numCtx }
+        options: {
+          num_ctx: numCtx,
+          stop: STOP_SEQUENCES
+          // Prevent hallucinated conversation continuations
+        }
       }),
       signal: opts == null ? void 0 : opts.signal
     });
@@ -317,8 +346,9 @@ var ModelClient = class {
         onDelta(chunk.response);
       }
     }
-    const header = parseHeader(fullText);
-    return { header, text: fullText };
+    const sanitizedText = sanitizeResponse(fullText);
+    const header = parseHeader(sanitizedText);
+    return { header, text: sanitizedText };
   }
 };
 var parseHeader = (text) => {

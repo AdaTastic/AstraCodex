@@ -33,6 +33,38 @@ const createStreamResponse = (chunks: string[]) => {
 };
 
 describe('ModelClient streaming', () => {
+  it('sends stop sequences to prevent hallucination', async () => {
+    // Bug: Model was generating fake "User:" lines, hallucinating entire conversations
+    // Fix: Pass stop sequences to Ollama so it stops before generating fake user messages
+    const chunks = [JSON.stringify({ done: true }) + '\n'];
+    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse(chunks));
+    const client = new ModelClient(settings, fetchMock as unknown as typeof fetch);
+
+    await client.generateStream('prompt', () => undefined);
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body.options.stop).toContain('User:');
+    expect(body.options.stop).toContain('Human:');
+    expect(body.options.stop).toContain('Memory:');
+  });
+
+  it('truncates hallucinated conversation continuations', async () => {
+    // Bug: Model generated "STATE: acting\nAssistant: ...\nUser: ..." in a single response
+    // Fix: Post-process to detect and truncate these hallucinations
+    const hallucinated = 'STATE: idle\nNEEDS_CONFIRMATION: false\nFINAL: Done!\nUser: Now do something else\nAssistant: Sure!';
+    const chunks = [JSON.stringify({ response: hallucinated }) + '\n'];
+    const fetchMock = vi.fn().mockResolvedValue(createStreamResponse(chunks));
+    const client = new ModelClient(settings, fetchMock as unknown as typeof fetch);
+    const deltas: string[] = [];
+
+    const result = await client.generateStream('prompt', (delta) => deltas.push(delta));
+
+    // The result.text should be truncated before the hallucinated "User:" line
+    expect(result.text).not.toContain('User: Now do something else');
+    expect(result.text).not.toContain('Assistant: Sure!');
+    expect(result.text).toContain('FINAL: Done!');
+  });
+
   it('streams deltas and parses header', async () => {
     const chunks = [
       JSON.stringify({ response: 'STATE: idle\nNEEDS_CONFIRMATION: false\nHello ' }) + '\n',

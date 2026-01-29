@@ -8,6 +8,42 @@ export interface ModelResponse {
   text: string;
 }
 
+// Stop sequences to prevent hallucination - model should stop before generating fake user messages
+const STOP_SEQUENCES = [
+  'User:',
+  '\nUser:',
+  'Human:',
+  '\nHuman:',
+  'Memory:',
+  '\nMemory:'
+];
+
+/**
+ * Detects and truncates hallucinated conversation continuations.
+ * Bug: Model sometimes continues generating "User: ...\nAssistant: ..." after its response.
+ * Fix: Detect these patterns and truncate before them.
+ */
+const sanitizeResponse = (text: string): string => {
+  // Look for hallucinated conversation markers after a line that looks like a response
+  // These patterns indicate the model is roleplaying a multi-turn conversation
+  const markers = [
+    /\nUser: /,
+    /\nHuman: /,
+    /\nMemory: /,
+    /\nAssistant: /  // Model shouldn't label its own continuation
+  ];
+
+  let truncateAt = text.length;
+  for (const marker of markers) {
+    const match = text.match(marker);
+    if (match?.index !== undefined && match.index < truncateAt) {
+      truncateAt = match.index;
+    }
+  }
+
+  return text.slice(0, truncateAt);
+};
+
 export class ModelClient {
   private settings: AstraCodexSettings;
   private fetchImpl: typeof fetch;
@@ -36,7 +72,10 @@ export class ModelClient {
         model: this.settings.model,
         prompt,
         stream: true,
-        options: { num_ctx: numCtx }
+        options: { 
+          num_ctx: numCtx,
+          stop: STOP_SEQUENCES  // Prevent hallucinated conversation continuations
+        }
       }),
       signal: opts?.signal
     });
@@ -79,8 +118,10 @@ export class ModelClient {
       }
     }
 
-    const header = parseHeader(fullText);
-    return { header, text: fullText };
+    // Sanitize response to remove any hallucinated conversation continuations
+    const sanitizedText = sanitizeResponse(fullText);
+    const header = parseHeader(sanitizedText);
+    return { header, text: sanitizedText };
   }
 }
 
