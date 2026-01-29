@@ -38,7 +38,13 @@ export const buildConversationHistory = (
     // IMPORTANT: history should not include msg.think or rawText.
     // We only include the user-facing msg.text, but we still strip tool blocks and any leaked <think> blocks.
     const base = stripToolBlocks(msg.text ?? '').trim();
-    const text = stripThinkBlocks(base);
+    let text = stripThinkBlocks(base);
+    
+    // Fall back to activityLine when text is empty (e.g., tool-only messages).
+    // This ensures the model "remembers" what actions it took.
+    if (!text && msg.activityLine) {
+      text = `[${msg.activityLine}]`;
+    }
     if (!text) continue;
 
     const chunk = `${prefix}${text}`;

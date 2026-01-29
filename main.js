@@ -721,7 +721,10 @@ var buildConversationHistory = (messages, maxChars, opts) => {
     if (msg.role !== "user" && msg.role !== "assistant") continue;
     const prefix = msg.role === "user" ? "User: " : "Assistant: ";
     const base = stripToolBlocks((_c = msg.text) != null ? _c : "").trim();
-    const text = stripThinkBlocks(base);
+    let text = stripThinkBlocks(base);
+    if (!text && msg.activityLine) {
+      text = `[${msg.activityLine}]`;
+    }
     if (!text) continue;
     const chunk = `${prefix}${text}`;
     const separator = lines.length === 0 ? "" : "\n";
@@ -733,6 +736,68 @@ var buildConversationHistory = (messages, maxChars, opts) => {
     used += addition.length;
   }
   return lines.reverse().join("\n");
+};
+
+// textParser.ts
+var extractThink = (text) => {
+  var _a;
+  const match = text.match(/<think>([\s\S]*?)<\/think>/i);
+  if (!match) return { think: null, rest: text };
+  const think = match[1].trim();
+  const rest = (text.slice(0, match.index) + text.slice(((_a = match.index) != null ? _a : 0) + match[0].length)).trim();
+  return { think: think || null, rest };
+};
+var extractHeaderAndBody = (text) => {
+  const lines = text.split(/\r?\n/);
+  let stateLine = null;
+  let needsLine = null;
+  const scanLimit = Math.min(lines.length, 60);
+  for (let i = 0; i < scanLimit; i++) {
+    const line = lines[i].trim();
+    if (!stateLine && line.startsWith("STATE:")) stateLine = line;
+    if (!needsLine && line.startsWith("NEEDS_CONFIRMATION:")) needsLine = line;
+    if (stateLine && needsLine) break;
+  }
+  const headerLines = [stateLine, needsLine].filter(Boolean);
+  const header = headerLines.length ? headerLines.join("\n") : null;
+  let body = text;
+  for (const h of headerLines) {
+    const idx = body.indexOf(h);
+    if (idx !== -1) {
+      body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
+    }
+  }
+  return { header, body };
+};
+var extractFinal = (text) => {
+  const match = text.match(/(^|\n)\s*FINAL:\s*/);
+  if (!match || match.index === void 0) return { final: null, body: text };
+  const start = match.index + match[0].length;
+  const final = text.slice(start).trim();
+  const body = text.slice(0, match.index).trim();
+  return { final: final || null, body };
+};
+var extractRetriggerMessage = (text) => {
+  var _a, _b;
+  const { header } = extractHeaderAndBody(text);
+  if (!header) return null;
+  const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
+  if (retriggerMatch) {
+    return (_b = (_a = retriggerMatch[2]) == null ? void 0 : _a.trim()) != null ? _b : null;
+  }
+  return null;
+};
+var extractLastReadPath = (text) => {
+  var _a;
+  const match = text.match(/```tool\s*([\s\S]*?)```/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    const path = (_a = parsed == null ? void 0 : parsed.args) == null ? void 0 : _a.path;
+    return typeof path === "string" ? path : null;
+  } catch (e) {
+    return null;
+  }
 };
 
 // view.ts
@@ -986,54 +1051,6 @@ ${pending.preview.after}`);
     this.messages.push({ role, text, header, headerExpanded: false });
     this.renderMessages();
   }
-  extractThink(text) {
-    var _a;
-    const match = text.match(/<think>([\s\S]*?)<\/think>/i);
-    if (!match) return { think: null, rest: text };
-    const think = match[1].trim();
-    const rest = (text.slice(0, match.index) + text.slice(((_a = match.index) != null ? _a : 0) + match[0].length)).trim();
-    return { think: think || null, rest };
-  }
-  extractHeaderAndBody(text) {
-    const lines = text.split(/\r?\n/);
-    let stateLine = null;
-    let needsLine = null;
-    const scanLimit = Math.min(lines.length, 60);
-    for (let i = 0; i < scanLimit; i++) {
-      const line = lines[i].trim();
-      if (!stateLine && line.startsWith("STATE:")) stateLine = line;
-      if (!needsLine && line.startsWith("NEEDS_CONFIRMATION:")) needsLine = line;
-      if (stateLine && needsLine) break;
-    }
-    const headerLines = [stateLine, needsLine].filter(Boolean);
-    const header = headerLines.length ? headerLines.join("\n") : null;
-    let body = text;
-    for (const h of headerLines) {
-      const idx = body.indexOf(h);
-      if (idx !== -1) {
-        body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
-      }
-    }
-    return { header, body };
-  }
-  extractFinal(text) {
-    const match = text.match(/(^|\n)\s*FINAL:\s*/);
-    if (!match || match.index === void 0) return { final: null, body: text };
-    const start = match.index + match[0].length;
-    const final = text.slice(start).trim();
-    const body = text.slice(0, match.index).trim();
-    return { final: final || null, body };
-  }
-  extractRetriggerMessage(text) {
-    var _a, _b;
-    const { header } = this.extractHeaderAndBody(text);
-    if (!header) return null;
-    const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
-    if (retriggerMatch) {
-      return (_b = (_a = retriggerMatch[2]) == null ? void 0 : _a.trim()) != null ? _b : null;
-    }
-    return null;
-  }
   updateLastAssistantMessage(text) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === "assistant") {
@@ -1042,13 +1059,13 @@ ${pending.preview.after}`);
       this.activityLine = extracted && !isExtractionError(extracted) ? formatToolActivity(extracted.toolCall) : null;
       last.activityLine = this.activityLine;
       const withoutToolBlocks = stripToolBlocks(text);
-      const { think, rest } = this.extractThink(withoutToolBlocks);
+      const { think, rest } = extractThink(withoutToolBlocks);
       if (think) {
         last.think = think;
         if (typeof last.thinkExpanded !== "boolean") last.thinkExpanded = false;
       }
-      const { header, body } = this.extractHeaderAndBody(rest);
-      const { final } = this.extractFinal(body);
+      const { header, body } = extractHeaderAndBody(rest);
+      const { final } = extractFinal(body);
       if (header) {
         last.header = header;
         const chosen = final != null ? final : body;
@@ -1056,11 +1073,11 @@ ${pending.preview.after}`);
       } else if (this.parsedHeader) {
         last.header = `STATE: ${this.parsedHeader.state}
 NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        const { final: finalFromRest } = this.extractFinal(rest);
+        const { final: finalFromRest } = extractFinal(rest);
         const chosen = finalFromRest != null ? finalFromRest : rest;
         last.text = chosen;
       } else {
-        const { final: finalFromRest } = this.extractFinal(rest);
+        const { final: finalFromRest } = extractFinal(rest);
         const chosen = finalFromRest != null ? finalFromRest : rest;
         last.text = chosen;
       }
@@ -1157,7 +1174,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
           onToolResult: ({ name, result: result2 }) => {
             var _a, _b;
             if (name === "read") {
-              const readPath = this.extractLastReadPath(assistantText);
+              const readPath = extractLastReadPath(assistantText);
               if ((readPath == null ? void 0 : readPath.startsWith("AstraCodex/Rules/")) && typeof result2 === "string") {
                 const ruleName = (_b = (_a = readPath.split("/").pop()) == null ? void 0 : _a.replace(/\.md$/, "")) != null ? _b : readPath;
                 this.loadedRules[ruleName] = result2;
@@ -1169,7 +1186,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
                 };
               }
             }
-            const { header } = this.extractHeaderAndBody(assistantText);
+            const { header } = extractHeaderAndBody(assistantText);
             if (header) {
               const stateMatch = header.match(/STATE:\s*([a-zA-Z_]+)/);
               const needsConfirmMatch = header.match(/NEEDS_CONFIRMATION:\s*(true|false)/);
@@ -1181,7 +1198,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
                 this.stateMachine.setNeedsConfirmation(needsConfirmMatch[1] === "true");
               }
             }
-            const retriggerMessage = this.extractRetriggerMessage(assistantText);
+            const retriggerMessage = extractRetriggerMessage(assistantText);
             if (retriggerMessage) {
               if (this.stateMachine.canAct()) {
                 this.pushMessage("user", retriggerMessage);
@@ -1219,18 +1236,6 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
       "uncertainty"
     ]);
     this.loadedRules = { ...this.loadedRules, ...base };
-  }
-  extractLastReadPath(text) {
-    var _a;
-    const match = text.match(/```tool\s*([\s\S]*?)```/);
-    if (!match) return null;
-    try {
-      const parsed = JSON.parse(match[1]);
-      const path = (_a = parsed == null ? void 0 : parsed.args) == null ? void 0 : _a.path;
-      return typeof path === "string" ? path : null;
-    } catch (e) {
-      return null;
-    }
   }
   async getActiveNoteContent() {
     const file = this.app.workspace.getActiveFile();

@@ -319,64 +319,6 @@ export class AgenticChatView extends ItemView {
     this.renderMessages();
   }
 
-  private extractThink(text: string): { think: string | null; rest: string } {
-    // Capture the first <think>...</think> block.
-    const match = text.match(/<think>([\s\S]*?)<\/think>/i);
-    if (!match) return { think: null, rest: text };
-    const think = match[1].trim();
-    const rest = (text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)).trim();
-    return { think: think || null, rest };
-  }
-
-  private extractHeaderAndBody(text: string): { header: string | null; body: string } {
-    const lines = text.split(/\r?\n/);
-    let stateLine: string | null = null;
-    let needsLine: string | null = null;
-
-    // Search within the first N lines for header keys.
-    const scanLimit = Math.min(lines.length, 60);
-    for (let i = 0; i < scanLimit; i++) {
-      const line = lines[i].trim();
-      if (!stateLine && line.startsWith('STATE:')) stateLine = line;
-      if (!needsLine && line.startsWith('NEEDS_CONFIRMATION:')) needsLine = line;
-      if (stateLine && needsLine) break;
-    }
-
-    const headerLines = [stateLine, needsLine].filter(Boolean) as string[];
-    const header = headerLines.length ? headerLines.join('\n') : null;
-
-    // Remove those header lines from the body (first occurrence only).
-    let body = text;
-    for (const h of headerLines) {
-      const idx = body.indexOf(h);
-      if (idx !== -1) {
-        body = (body.slice(0, idx) + body.slice(idx + h.length)).trim();
-      }
-    }
-    return { header, body };
-  }
-
-  private extractFinal(text: string): { final: string | null; body: string } {
-    // Prefer explicit FINAL: marker to separate user-facing answer from other output.
-    const match = text.match(/(^|\n)\s*FINAL:\s*/);
-    if (!match || match.index === undefined) return { final: null, body: text };
-    const start = match.index + match[0].length;
-    const final = text.slice(start).trim();
-    const body = text.slice(0, match.index).trim();
-    return { final: final || null, body };
-  }
-
-  
-  private extractRetriggerMessage(text: string): string | null {
-    // Extract retrigger message from STATE: RETRIGGER header.
-    const { header } = this.extractHeaderAndBody(text);
-    if (!header) return null;
-    const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
-    if (retriggerMatch) {
-      return retriggerMatch[2]?.trim() ?? null;
-    }
-    return null;
-  }
 
   private updateLastAssistantMessage(text: string) {
     const last = this.messages[this.messages.length - 1];
@@ -390,25 +332,25 @@ export class AgenticChatView extends ItemView {
       last.activityLine = this.activityLine;
 
       const withoutToolBlocks = stripToolBlocks(text);
-      const { think, rest } = this.extractThink(withoutToolBlocks);
+      const { think, rest } = extractThink(withoutToolBlocks);
       if (think) {
         last.think = think;
         if (typeof last.thinkExpanded !== 'boolean') last.thinkExpanded = false;
       }
 
-      const { header, body } = this.extractHeaderAndBody(rest);
-      const { final } = this.extractFinal(body);
+      const { header, body } = extractHeaderAndBody(rest);
+      const { final } = extractFinal(body);
       if (header) {
         last.header = header;
         const chosen = final ?? body;
         last.text = chosen;
       } else if (this.parsedHeader) {
         last.header = `STATE: ${this.parsedHeader.state}\nNEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        const { final: finalFromRest } = this.extractFinal(rest);
+        const { final: finalFromRest } = extractFinal(rest);
         const chosen = finalFromRest ?? rest;
         last.text = chosen;
       } else {
-        const { final: finalFromRest } = this.extractFinal(rest);
+        const { final: finalFromRest } = extractFinal(rest);
         const chosen = finalFromRest ?? rest;
         last.text = chosen;
       }
@@ -524,7 +466,7 @@ export class AgenticChatView extends ItemView {
           onToolResult: ({ name, result }) => {
             // If a rule file was read, cache it into loadedRules.
             if (name === 'read') {
-              const readPath = this.extractLastReadPath(assistantText);
+              const readPath = extractLastReadPath(assistantText);
               if (readPath?.startsWith('AstraCodex/Rules/') && typeof result === 'string') {
                 const ruleName = readPath.split('/').pop()?.replace(/\.md$/, '') ?? readPath;
                 this.loadedRules[ruleName] = result;
@@ -540,7 +482,7 @@ export class AgenticChatView extends ItemView {
             }
             
             // Update state machine based on the last assistant message header.
-            const { header } = this.extractHeaderAndBody(assistantText);
+            const { header } = extractHeaderAndBody(assistantText);
             if (header) {
               const stateMatch = header.match(/STATE:\s*([a-zA-Z_]+)/);
               const needsConfirmMatch = header.match(/NEEDS_CONFIRMATION:\s*(true|false)/);
@@ -554,7 +496,7 @@ export class AgenticChatView extends ItemView {
             }
             
             // Handle retrigger messages.
-            const retriggerMessage = this.extractRetriggerMessage(assistantText);
+            const retriggerMessage = extractRetriggerMessage(assistantText);
             if (retriggerMessage) {
               // Only process retrigger if state machine allows action.
               if (this.stateMachine.canAct()) {
@@ -600,18 +542,6 @@ export class AgenticChatView extends ItemView {
     this.loadedRules = { ...this.loadedRules, ...base };
   }
 
-  private extractLastReadPath(text: string): string | null {
-    // Looks for a fenced tool block and returns args.path if present.
-    const match = text.match(/```tool\s*([\s\S]*?)```/);
-    if (!match) return null;
-    try {
-      const parsed = JSON.parse(match[1]);
-      const path = parsed?.args?.path;
-      return typeof path === 'string' ? path : null;
-    } catch {
-      return null;
-    }
-  }
 
   private async getActiveNoteContent(): Promise<string | undefined> {
     const file = this.app.workspace.getActiveFile();
