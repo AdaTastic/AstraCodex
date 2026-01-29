@@ -1,6 +1,7 @@
+import type { Message, ToolCallInfo } from './types';
 import type { ModelResponse } from './modelClient';
 import type { ToolRunner } from './toolRunner';
-import { executeToolCall, extractFencedToolCall, isExtractionError } from './toolOrchestrator';
+import { executeToolCall, extractFencedToolCall, isExtractionError, type ToolCall } from './toolOrchestrator';
 
 export type AgentLoopModel = {
   generateStream: (
@@ -11,20 +12,21 @@ export type AgentLoopModel = {
 };
 
 export type AgentLoopCallbacks = {
-  onTurnStart?: (payload: { turn: number; userMessage: string }) => void;
+  onTurnStart?: (payload: { turn: number; history: Message[] }) => void;
   onAssistantStart?: () => void;
   onAssistantDelta?: (delta: string, fullTextSoFar: string) => void;
   onHeader?: (header: ModelResponse['header']) => void;
   onToolResult?: (payload: { name: string; result: unknown }) => void;
-  /** Called after tool execution if a retrigger will occur. */
-  onRetrigger?: (payload: { message: string }) => void;
   /** Called when the model outputs multiple tool blocks (error). */
   onToolError?: (payload: { error: string }) => void;
+  /** Called when a message is added to history */
+  onMessageAdded?: (message: Message) => void;
 };
 
 export type RunAgentLoopArgs = {
-  initialUserMessage: string;
-  buildPrompt: (userMessage: string) => string;
+  /** Initial conversation history (includes system message context) */
+  history: Message[];
+  buildPrompt: (history: Message[]) => string;
   model: AgentLoopModel;
   toolRunner: ToolRunner;
   maxTurns?: number;
@@ -33,12 +35,15 @@ export type RunAgentLoopArgs = {
 };
 
 /**
- * Runs: model -> (optional tool call -> tool execute -> retrigger) repeating until no tool call or no retrigger.
- *
- * NOTE: Tool results are appended into the next userMessage so the model can see them.
+ * Runs agent loop: model -> tool_calls? -> execute -> inject result -> repeat
+ * 
+ * Loop continues until:
+ * - Model returns response without tool_calls
+ * - maxTurns reached
+ * - Signal aborted
  */
 export const runAgentLoop = async ({
-  initialUserMessage,
+  history,
   buildPrompt,
   model,
   toolRunner,
@@ -46,23 +51,22 @@ export const runAgentLoop = async ({
   callbacks,
   signal
 }: RunAgentLoopArgs): Promise<ModelResponse> => {
-  let userMessage = initialUserMessage;
   let lastResponse: ModelResponse | null = null;
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
-    callbacks?.onTurnStart?.({ turn, userMessage });
-    const prompt = buildPrompt(userMessage);
+    callbacks?.onTurnStart?.({ turn, history });
+    const prompt = buildPrompt(history);
     callbacks?.onAssistantStart?.();
 
     let streamed = '';
     const response = await model.generateStream(
       prompt,
       (delta) => {
-      streamed += delta;
-      callbacks?.onAssistantDelta?.(delta, streamed);
+        streamed += delta;
+        callbacks?.onAssistantDelta?.(delta, streamed);
       },
       { signal }
     );
@@ -70,14 +74,43 @@ export const runAgentLoop = async ({
     lastResponse = response;
     callbacks?.onHeader?.(response.header);
 
+    // Extract tool call from response
     const extracted = extractFencedToolCall(response.text);
+    
+    // Create assistant message
+    const assistantMessage: Message = {
+      role: 'assistant',
+      text: response.text,
+      rawText: response.text,
+      header: response.header ? `STATE: ${response.header.state}` : undefined
+    };
+
+    // If tool call found, add it to message
+    if (extracted && !isExtractionError(extracted)) {
+      const toolCallInfo: ToolCallInfo = {
+        name: extracted.toolCall.name,
+        arguments: extracted.toolCall.arguments ?? {}
+      };
+      assistantMessage.toolCalls = [toolCallInfo];
+    }
+
+    // Add assistant message to history
+    history.push(assistantMessage);
+    callbacks?.onMessageAdded?.(assistantMessage);
+
+    // No tool call - done
     if (!extracted) break;
 
     // Handle extraction errors (e.g., multiple tool blocks)
     if (isExtractionError(extracted)) {
       callbacks?.onToolError?.({ error: extracted.error });
-      // Auto-retry by feeding the error back to the model
-      userMessage = `ERROR: ${extracted.error}\n\nPlease try again with exactly ONE tool block.`;
+      // Add error as user message and continue
+      const errorMessage: Message = {
+        role: 'user',
+        text: `ERROR: ${extracted.error}\n\nPlease try again with exactly ONE tool block.`
+      };
+      history.push(errorMessage);
+      callbacks?.onMessageAdded?.(errorMessage);
       continue;
     }
 
@@ -85,19 +118,23 @@ export const runAgentLoop = async ({
       throw new DOMException('Aborted', 'AbortError');
     }
 
+    // Execute tool
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
     callbacks?.onToolResult?.({ name: executed.name, result: executed.result });
 
-    if (!executed.retriggerMessage) break;
-    if (signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
-    callbacks?.onRetrigger?.({ message: executed.retriggerMessage });
+    // Add tool result to history as role:"tool" message
+    const toolResultMessage: Message = {
+      role: 'tool',
+      text: typeof executed.result === 'string' 
+        ? executed.result 
+        : JSON.stringify(executed.result, null, 2),
+      toolResult: executed.result,
+      toolCallId: `${turn}-${executed.name}`
+    };
+    history.push(toolResultMessage);
+    callbacks?.onMessageAdded?.(toolResultMessage);
 
-    const toolResultText =
-      typeof executed.result === 'string' ? executed.result : JSON.stringify(executed.result, null, 2);
-
-    userMessage = `${executed.retriggerMessage}\n\nTool Result (${executed.name}):\n${toolResultText}`;
+    // Loop continues - model will see tool result and decide next action
   }
 
   if (!lastResponse) {

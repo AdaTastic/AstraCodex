@@ -1,98 +1,128 @@
-import { describe, expect, it, vi } from 'vitest';
-import { executeToolCall, extractFencedToolCall, formatToolActivity, stripToolBlocks, isExtractionError } from '../toolOrchestrator';
+import { describe, it, expect, vi } from 'vitest';
+import { 
+  extractFencedToolCall, 
+  formatToolActivity, 
+  stripToolBlocks, 
+  executeToolCall,
+  isExtractionError
+} from '../toolOrchestrator';
+import type { ToolRunner } from '../toolRunner';
 
-describe('toolOrchestrator', () => {
-  it('extracts a fenced tool block with retrigger', () => {
-    const text = `Hello\n\n\`\`\`tool\n{"name":"read","args":{"path":"note.md"},"retrigger":{"message":"Summarize"}}\n\`\`\`\n`;
-    const extracted = extractFencedToolCall(text);
-
-    expect(isExtractionError(extracted)).toBe(false);
-    if (!isExtractionError(extracted) && extracted) {
-      expect(extracted.toolCall.name).toBe('read');
-      expect(extracted.toolCall.args).toEqual({ path: 'note.md' });
-      expect(extracted.toolCall.retrigger?.message).toBe('Summarize');
+describe('extractFencedToolCall', () => {
+  it('extracts XML tool call with arguments', () => {
+    const text = `I will read the file.
+<tool_call>
+{"name": "read", "arguments": {"path": "file.md"}}
+</tool_call>`;
+    const result = extractFencedToolCall(text);
+    expect(result).not.toBeNull();
+    expect(isExtractionError(result)).toBe(false);
+    if (result && !isExtractionError(result)) {
+      expect(result.toolCall.name).toBe('read');
+      expect(result.toolCall.arguments).toEqual({ path: 'file.md' });
     }
   });
 
-  it('does not extract when block is not fenced as tool', () => {
-    const text = `TOOL_CALL {"name":"read"}`;
-    expect(extractFencedToolCall(text)).toBeNull();
-  });
-
-  it('executes tool call and returns retrigger message', async () => {
-    const runner = {
-      executeTool: vi.fn(async () => ({ ok: true }))
-    } as any;
-
-    const result = await executeToolCall(runner, {
-      name: 'list',
-      args: { prefix: '' },
-      retrigger: { message: 'Pick a file and read it' }
-    });
-
-    expect(runner.executeTool).toHaveBeenCalledWith('list', { prefix: '' });
-    expect(result.result).toEqual({ ok: true });
-    expect(result.retriggerMessage).toBe('Pick a file and read it');
-  });
-
-  it('formats tool activity lines for display', () => {
-    expect(formatToolActivity({ name: 'active_file', args: {} })).toBe('reading: [current file]');
-    expect(formatToolActivity({ name: 'list', args: { prefix: 'Harmful' } })).toBe('listing: Harmful');
-    expect(formatToolActivity({ name: 'read', args: { path: 'note.md' } })).toBe('reading: note.md');
-  });
-
-  it('strips tool blocks from assistant text', () => {
-    const text = `Hello\n\n\`\`\`tool\n{"name":"list","args":{"prefix":""}}\n\`\`\`\n\nWorld`;
-    expect(stripToolBlocks(text)).toBe('Hello\n\nWorld');
-  });
-
-  it('when multiple tool blocks detected, uses the LAST one', () => {
-    // Model often outputs planning block in think, real block after
-    const text = `STATE: acting\n\n\`\`\`tool\n{"name":"list","args":{"prefix":"first"}}\n\`\`\`\n\nFINAL: Here\n\n\`\`\`tool\n{"name":"read","args":{"path":"note.md"}}\n\`\`\``;
-    const extracted = extractFencedToolCall(text);
-
-    // Should NOT be an error - use the last block
-    expect(isExtractionError(extracted)).toBe(false);
-    if (!isExtractionError(extracted) && extracted) {
-      // Last block should be used
-      expect(extracted.toolCall.name).toBe('read');
-      expect(extracted.toolCall.args).toEqual({ path: 'note.md' });
+  it('extracts XML tool call without arguments', () => {
+    const text = `<tool_call>{"name": "active_file"}</tool_call>`;
+    const result = extractFencedToolCall(text);
+    expect(result).not.toBeNull();
+    if (result && !isExtractionError(result)) {
+      expect(result.toolCall.name).toBe('active_file');
+      expect(result.toolCall.arguments).toEqual({});
     }
   });
 
-  it('extracts tool block that appears inside think tags', () => {
-    // Some models put tool blocks inside think, then close think
-    const text = `<think>Let me read that.\n\n\`\`\`tool\n{"name":"read","args":{"path":"note.md"}}\n\`\`\`</think>STATE: acting`;
-    const extracted = extractFencedToolCall(text);
-
-    expect(isExtractionError(extracted)).toBe(false);
-    if (!isExtractionError(extracted) && extracted) {
-      expect(extracted.toolCall.name).toBe('read');
-      expect(extracted.toolCall.args).toEqual({ path: 'note.md' });
+  it('uses LAST tool block when multiple exist', () => {
+    const text = `First:
+<tool_call>{"name": "list", "arguments": {"prefix": ""}}</tool_call>
+Second:
+<tool_call>{"name": "read", "arguments": {"path": "final.md"}}</tool_call>`;
+    const result = extractFencedToolCall(text);
+    expect(result).not.toBeNull();
+    if (result && !isExtractionError(result)) {
+      expect(result.toolCall.name).toBe('read');
+      expect(result.toolCall.arguments).toEqual({ path: 'final.md' });
     }
   });
 
-  it('extracts tool block that appears after FINAL:', () => {
-    // Model puts FINAL: text then tool block
-    const text = `STATE: acting\nNEEDS_CONFIRMATION: false\nFINAL: I'll read that now.\n\`\`\`tool\n{"name":"read","args":{"path":"HABs.md"}}\n\`\`\``;
-    const extracted = extractFencedToolCall(text);
-
-    expect(isExtractionError(extracted)).toBe(false);
-    if (!isExtractionError(extracted) && extracted) {
-      expect(extracted.toolCall.name).toBe('read');
-      expect(extracted.toolCall.args).toEqual({ path: 'HABs.md' });
-    }
+  it('returns null when no tool block present', () => {
+    const text = 'Just regular text without any tool calls.';
+    const result = extractFencedToolCall(text);
+    expect(result).toBeNull();
   });
 
-  it('when tool in think AND after, uses the one outside think', () => {
-    const text = `<think>\`\`\`tool\n{"name":"list","args":{}}\n\`\`\`</think>\`\`\`tool\n{"name":"read","args":{"path":"real.md"}}\n\`\`\``;
-    const extracted = extractFencedToolCall(text);
-
-    expect(isExtractionError(extracted)).toBe(false);
-    if (!isExtractionError(extracted) && extracted) {
-      // Prefer the one outside think (last one)
-      expect(extracted.toolCall.name).toBe('read');
-      expect(extracted.toolCall.args).toEqual({ path: 'real.md' });
+  it('handles unclosed XML tool block', () => {
+    const text = `<tool_call>{"name": "list", "arguments": {"prefix": "test/"}}`;
+    const result = extractFencedToolCall(text);
+    expect(result).not.toBeNull();
+    if (result && !isExtractionError(result)) {
+      expect(result.toolCall.name).toBe('list');
     }
+  });
+});
+
+describe('formatToolActivity', () => {
+  it('formats list tool', () => {
+    expect(formatToolActivity({ name: 'list', arguments: { prefix: 'docs/' } }))
+      .toBe('listing: docs/');
+  });
+
+  it('formats list tool with empty prefix', () => {
+    expect(formatToolActivity({ name: 'list', arguments: { prefix: '' } }))
+      .toBe('listing: [all files]');
+  });
+
+  it('formats read tool', () => {
+    expect(formatToolActivity({ name: 'read', arguments: { path: 'test.md' } }))
+      .toBe('reading: test.md');
+  });
+
+  it('formats write tool', () => {
+    expect(formatToolActivity({ name: 'write', arguments: { path: 'out.md' } }))
+      .toBe('editing: out.md');
+  });
+
+  it('formats active_file tool', () => {
+    expect(formatToolActivity({ name: 'active_file' }))
+      .toBe('reading: [current file]');
+  });
+
+  it('formats unknown tool', () => {
+    expect(formatToolActivity({ name: 'custom_tool', arguments: {} }))
+      .toBe('tool: custom_tool');
+  });
+});
+
+describe('stripToolBlocks', () => {
+  it('removes XML tool blocks', () => {
+    const text = `Before
+<tool_call>{"name": "read", "arguments": {"path": "x"}}</tool_call>
+After`;
+    expect(stripToolBlocks(text)).toBe('Before\n\nAfter');
+  });
+
+  it('removes multiple tool blocks', () => {
+    const text = `A <tool_call>{"name": "a"}</tool_call> B <tool_call>{"name": "b"}</tool_call> C`;
+    expect(stripToolBlocks(text)).toBe('A  B  C');
+  });
+
+  it('handles text with no tool blocks', () => {
+    const text = 'Plain text';
+    expect(stripToolBlocks(text)).toBe('Plain text');
+  });
+});
+
+describe('executeToolCall', () => {
+  it('executes tool and returns result', async () => {
+    const mockRunner = {
+      executeTool: vi.fn().mockResolvedValue({ files: ['a.md', 'b.md'] })
+    } as unknown as ToolRunner;
+
+    const result = await executeToolCall(mockRunner, { name: 'list', arguments: { prefix: '' } });
+    
+    expect(result.name).toBe('list');
+    expect(result.result).toEqual({ files: ['a.md', 'b.md'] });
+    expect(mockRunner.executeTool).toHaveBeenCalledWith('list', { prefix: '' });
   });
 });

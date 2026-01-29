@@ -1,131 +1,117 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { runAgentLoop } from '../agentLoop';
+import type { Message } from '../types';
+import type { ToolRunner } from '../toolRunner';
 
-describe('agentLoop', () => {
-  it('runs tool, then retriggers with tool result appended, then stops when no tool call', async () => {
-    const model = {
-      generateStream: vi
-        .fn()
-        // First call returns a tool block + retrigger
-        .mockResolvedValueOnce({
-          header: { state: 'thinking', needsConfirmation: false },
-          text: 'STATE: thinking\nNEEDS_CONFIRMATION: false\n\n```tool\n{"name":"list","args":{"prefix":""},"retrigger":{"message":"Pick the best match and read it"}}\n```'
-        })
-        // Second call returns plain text (no tool)
-        .mockResolvedValueOnce({
-          header: { state: 'thinking', needsConfirmation: false },
-          text: 'STATE: thinking\nNEEDS_CONFIRMATION: false\n\nDone.'
-        })
-    };
+const createMockModel = (responses: string[]) => {
+  let callIndex = 0;
+  return {
+    generateStream: vi.fn(async (prompt: string, onDelta: (text: string) => void) => {
+      const response = responses[callIndex] ?? '';
+      callIndex++;
+      onDelta(response);
+      return {
+        text: response,
+        header: { state: 'idle', needsConfirmation: false }
+      };
+    })
+  };
+};
 
-    const toolRunner = {
-      executeTool: vi.fn(async () => ['A.md', 'B.md'])
-    } as any;
+const createMockToolRunner = () => ({
+  executeTool: vi.fn().mockResolvedValue({ files: ['a.md'] })
+} as unknown as ToolRunner);
 
-    const prompts: string[] = [];
-    const turns: Array<{ turn: number; userMessage: string }> = [];
+describe('runAgentLoop', () => {
+  it('runs single turn without tool call', async () => {
+    const model = createMockModel(['Hello, how can I help?']);
+    const runner = createMockToolRunner();
+    const history: Message[] = [{ role: 'user', text: 'Hi' }];
+    const onTurnStart = vi.fn();
+
     const result = await runAgentLoop({
-      initialUserMessage: 'Summarize file A',
-      buildPrompt: (userMessage) => {
-        prompts.push(userMessage);
-        return `PROMPT:${userMessage}`;
-      },
-      model: model as any,
-      toolRunner,
-      callbacks: {
-        onTurnStart: (payload) => turns.push(payload)
-      }
+      history,
+      buildPrompt: (h) => h.map(m => `${m.role}: ${m.text}`).join('\n'),
+      model,
+      toolRunner: runner,
+      callbacks: { onTurnStart }
     });
 
-    expect(toolRunner.executeTool).toHaveBeenCalledWith('list', { prefix: '' });
-    // second turn userMessage contains tool result
-    expect(prompts[1]).toContain('Pick the best match and read it');
-    expect(prompts[1]).toContain('Tool Result (list)');
-    expect(turns.map((t) => t.turn)).toEqual([0, 1]);
-    expect(result.text).toContain('Done.');
+    expect(result.text).toBe('Hello, how can I help?');
+    expect(onTurnStart).toHaveBeenCalledWith({ turn: 0, history: expect.any(Array) });
+    expect(runner.executeTool).not.toHaveBeenCalled();
   });
 
-  it('uses the last tool block when multiple are present', async () => {
-    const model = {
-      generateStream: vi
-        .fn()
-        // Returns multiple tool blocks - should use the LAST one
-        .mockResolvedValueOnce({
-          header: { state: 'acting', needsConfirmation: false },
-          text: 'STATE: acting\n```tool\n{"name":"list","args":{}}\n```\nFINAL: here\n```tool\n{"name":"read","args":{"path":"correct.md"},"retrigger":{"message":"reading"}}\n```'
-        })
-        // After tool execution
-        .mockResolvedValueOnce({
-          header: { state: 'idle', needsConfirmation: false },
-          text: 'Done reading.'
-        })
-    };
-
-    const toolRunner = {
-      executeTool: vi.fn(async () => 'file content')
-    } as any;
+  it('executes tool and loops when tool_call present', async () => {
+    const model = createMockModel([
+      '<tool_call>{"name": "list", "arguments": {"prefix": ""}}</tool_call>',
+      'Found files: a.md'
+    ]);
+    const runner = createMockToolRunner();
+    const history: Message[] = [{ role: 'user', text: 'List files' }];
+    const onToolResult = vi.fn();
+    const onMessageAdded = vi.fn();
 
     const result = await runAgentLoop({
-      initialUserMessage: 'Read file',
-      buildPrompt: (msg) => msg,
-      model: model as any,
-      toolRunner
+      history,
+      buildPrompt: (h) => h.map(m => `${m.role}: ${m.text}`).join('\n'),
+      model,
+      toolRunner: runner,
+      callbacks: { onToolResult, onMessageAdded }
     });
 
-    // Should use the LAST tool block (read with path), not the first (list)
-    expect(toolRunner.executeTool).toHaveBeenCalledWith('read', { path: 'correct.md' });
+    expect(runner.executeTool).toHaveBeenCalledWith('list', { prefix: '' });
+    expect(onToolResult).toHaveBeenCalledWith({ name: 'list', result: { files: ['a.md'] } });
+    expect(result.text).toBe('Found files: a.md');
+    
+    // Should have added: assistant (with tool), tool result, assistant (final)
+    expect(onMessageAdded).toHaveBeenCalledTimes(3);
+  });
+
+  it('respects maxTurns limit', async () => {
+    // Model keeps outputting tool calls forever
+    const model = createMockModel([
+      '<tool_call>{"name": "list", "arguments": {}}</tool_call>',
+      '<tool_call>{"name": "list", "arguments": {}}</tool_call>',
+      '<tool_call>{"name": "list", "arguments": {}}</tool_call>',
+      '<tool_call>{"name": "list", "arguments": {}}</tool_call>'
+    ]);
+    const runner = createMockToolRunner();
+    const history: Message[] = [{ role: 'user', text: 'Loop forever' }];
+
+    await runAgentLoop({
+      history,
+      buildPrompt: (h) => 'prompt',
+      model,
+      toolRunner: runner,
+      maxTurns: 2
+    });
+
+    // Only 2 turns allowed
     expect(model.generateStream).toHaveBeenCalledTimes(2);
   });
 
-  it('stops after maxTurns limit', async () => {
-    const model = {
-      generateStream: vi.fn().mockResolvedValue({
-        header: { state: 'acting', needsConfirmation: false },
-        text: '```tool\n{"name":"list","args":{},"retrigger":{"message":"continue"}}\n```'
-      })
-    };
+  it('adds tool result as role:tool message', async () => {
+    const model = createMockModel([
+      '<tool_call>{"name": "read", "arguments": {"path": "test.md"}}</tool_call>',
+      'Done'
+    ]);
+    const runner = {
+      executeTool: vi.fn().mockResolvedValue('file content here')
+    } as unknown as ToolRunner;
+    const history: Message[] = [{ role: 'user', text: 'Read test.md' }];
 
-    const toolRunner = {
-      executeTool: vi.fn(async () => [])
-    } as any;
-
-    const turns: number[] = [];
-    const result = await runAgentLoop({
-      initialUserMessage: 'List files',
-      buildPrompt: (msg) => msg,
-      model: model as any,
-      toolRunner,
-      maxTurns: 3,
-      callbacks: {
-        onTurnStart: ({ turn }) => turns.push(turn)
-      }
+    await runAgentLoop({
+      history,
+      buildPrompt: (h) => 'prompt',
+      model,
+      toolRunner: runner
     });
 
-    expect(turns).toEqual([0, 1, 2]);
-    expect(model.generateStream).toHaveBeenCalledTimes(3);
-  });
-
-  it('throws AbortError when signal is aborted', async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    const model = {
-      generateStream: vi.fn().mockResolvedValue({
-        header: { state: 'idle', needsConfirmation: false },
-        text: 'Hello'
-      })
-    };
-
-    const toolRunner = { executeTool: vi.fn() } as any;
-
-    await expect(
-      runAgentLoop({
-        initialUserMessage: 'Hello',
-        buildPrompt: (msg) => msg,
-        model: model as any,
-        toolRunner,
-        signal: controller.signal
-      })
-    ).rejects.toThrow('Aborted');
+    // Check that tool message was added
+    const toolMsg = history.find(m => m.role === 'tool');
+    expect(toolMsg).toBeDefined();
+    expect(toolMsg?.text).toBe('file content here');
+    expect(toolMsg?.toolResult).toBe('file content here');
   });
 });

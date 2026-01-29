@@ -32,7 +32,7 @@ describe('PromptBuilder', () => {
     expect(prompt).toContain('<think>');
     expect(prompt).toContain('</think>');
     expect(prompt).toContain('TOOL CALLS:');
-    expect(prompt).toContain('```tool');
+    expect(prompt).toContain('<tool_call>');
     expect(prompt).toContain('FILE READING GUIDANCE:');
     // Still includes core rules
     expect(prompt).toContain('CHARTER');
@@ -102,44 +102,14 @@ describe('PromptBuilder', () => {
       userMessage: 'Follow-up question',
       settings: { ...settings, maxContextChars: 2000 },
       coreRules,
-      history: 'User: Hi\nAssistant: Hello'
+      history: '[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello"}]'
     });
 
     expect(prompt).toContain('Conversation History:');
-    expect(prompt).toContain('User: Hi');
-    expect(prompt).toContain('Assistant: Hello');
+    expect(prompt).toContain('"role":"user"');
+    expect(prompt).toContain('"content":"Hi"');
     expect(prompt).toContain('User Request:');
     expect(prompt).toContain('Follow-up question');
-  });
-
-  it('includes last document context when provided', () => {
-    const prompt = buildPrompt({
-      userMessage: 'Summarize it',
-      settings: { ...settings, maxContextChars: 2000 },
-      coreRules,
-      lastDocument: { path: 'Harmful Algal Blooms (HABs).md', content: 'DOC CONTENT HERE' }
-    });
-
-    expect(prompt).toContain('Last Document Context (Harmful Algal Blooms (HABs).md):');
-    expect(prompt).toContain('DOC CONTENT HERE');
-  });
-
-  it('preserves lastDocument over history when context is truncated', () => {
-    // Bug: lastDocument was placed AFTER history in context, so it got truncated first.
-    // Fix: lastDocument should have HIGHER priority than history.
-    const longHistory = 'User: First message\nAssistant: Reply 1\n'.repeat(50);
-    const prompt = buildPrompt({
-      userMessage: 'Summarize the HAB document',
-      settings: { ...settings, maxContextChars: 1500 },
-      coreRules,
-      history: longHistory,
-      lastDocument: { path: 'HABs.md', content: 'IMPORTANT_DOCUMENT_CONTENT' }
-    });
-
-    // lastDocument should survive truncation
-    expect(prompt).toContain('IMPORTANT_DOCUMENT_CONTENT');
-    // History may be partially truncated, but lastDocument must be there
-    expect(prompt).toContain('Last Document Context (HABs.md):');
   });
 
   it('preserves the latest user request when context is truncated', () => {
@@ -152,5 +122,17 @@ describe('PromptBuilder', () => {
 
     expect(prompt).toContain('User Request:');
     expect(prompt).toContain('LATEST QUESTION');
+  });
+
+  it('includes tool call format example in header', () => {
+    const prompt = buildPrompt({
+      userMessage: 'hello',
+      settings: { ...settings, maxContextChars: 2000 },
+      coreRules
+    });
+
+    expect(prompt).toContain('<tool_call>');
+    expect(prompt).toContain('"name":');
+    expect(prompt).toContain('"arguments":');
   });
 });

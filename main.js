@@ -103,10 +103,17 @@ Everything OUTSIDE <think> tags is shown directly to the user.
 IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
 
 TOOL CALLS:
-See AstraCodex/Rules/tool_protocol.md for supported formats.
+To use a tool, output a tool_call block:
+
+<tool_call>
+{"name": "read", "arguments": {"path": "file.md"}}
+</tool_call>
+
+Rules:
 - Output AT MOST ONE tool block per response
 - Do NOT include tool blocks inside <think> tags
-- If you output multiple tool blocks, only the last one will be executed
+- Tool results will be added to conversation history automatically
+- You will be called again after each tool execution to see the result
 
 FILE READING GUIDANCE:
 - If the user asks to read a file by name/title, call \`list\` first to find the correct path.
@@ -127,12 +134,10 @@ var buildPrompt = ({
   rules,
   memory,
   history,
-  lastDocument,
   activeNote,
   selection,
   tools
 }) => {
-  var _a;
   const contextSections = [];
   const headerSection = HEADER_REMINDER.trim();
   contextSections.push(`Charter:
@@ -157,10 +162,6 @@ ${rulesBlock}`);
     }).join("\n");
     contextSections.push(`Tools:
 ${toolBlock}`);
-  }
-  if ((_a = lastDocument == null ? void 0 : lastDocument.content) == null ? void 0 : _a.trim()) {
-    contextSections.push(`Last Document Context (${lastDocument.path}):
-${lastDocument.content.trim()}`);
   }
   if (typeof history === "string" && history.trim().length > 0) {
     contextSections.push(`Conversation History:
@@ -603,13 +604,11 @@ var parseToolJson = (rawJson) => {
   try {
     const parsed = JSON.parse(rawJson);
     if (!(parsed == null ? void 0 : parsed.name) || typeof parsed.name !== "string") return null;
-    const args = parsed.args && typeof parsed.args === "object" ? parsed.args : {};
-    const retrigger = parsed.retrigger && typeof parsed.retrigger === "object" && typeof parsed.retrigger.message === "string" ? { message: parsed.retrigger.message } : void 0;
+    const args = parsed.arguments && typeof parsed.arguments === "object" ? parsed.arguments : {};
     return {
       toolCall: {
         name: parsed.name,
-        args,
-        retrigger
+        arguments: args
       },
       rawBlock: rawJson
     };
@@ -619,15 +618,15 @@ var parseToolJson = (rawJson) => {
 };
 var extractFencedToolCall = (text) => {
   const allBlocks = [];
-  const fencedMatches = text.matchAll(/```tool\s*([\s\S]*?)```/g);
-  for (const match of fencedMatches) {
-    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
-  }
-  const xmlMatches = text.matchAll(/<tool_call>(?:tool\s*)?([\s\S]*?)<\/tool_call>/gi);
+  const xmlMatches = text.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi);
   for (const match of xmlMatches) {
-    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
+    const content = match[1].trim();
+    const jsonMatch = content.match(/(\{[\s\S]*\})/);
+    if (jsonMatch) {
+      allBlocks.push({ rawBlock: match[0], json: jsonMatch[1].trim() });
+    }
   }
-  const unclosedMatches = text.matchAll(/<tool_call>(?:tool\s*)?(\{[\s\S]*?\})(?=\s|$|<)/gi);
+  const unclosedMatches = text.matchAll(/<tool_call>\s*(\{[\s\S]*?\})(?=\s*$|\s*<|\n\n)/gi);
   for (const match of unclosedMatches) {
     const json = match[1].trim();
     if (!allBlocks.some((b) => b.json === json)) {
@@ -648,7 +647,7 @@ var extractFencedToolCall = (text) => {
 var formatToolActivity = (call) => {
   var _a;
   const n = call.name;
-  const args = (_a = call.args) != null ? _a : {};
+  const args = (_a = call.arguments) != null ? _a : {};
   if (n === "active_file") return "reading: [current file]";
   if (n === "list") {
     const prefix = typeof args.prefix === "string" ? args.prefix : "";
@@ -664,25 +663,24 @@ var formatToolActivity = (call) => {
   return `tool: ${n}`;
 };
 var stripToolBlocks = (text) => {
-  let result = text.replace(/```tool\s*[\s\S]*?```/g, "");
-  result = result.replace(/<tool_call>(?:tool\s*)?[\s\S]*?<\/tool_call>/gi, "");
-  result = result.replace(/<tool_call>(?:tool\s*)?\{[\s\S]*?\}(?=\s|$|<)/gi, "");
+  let result = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+  result = result.replace(/<tool_call>\s*\{[\s\S]*?\}(?=\s*$|\s*<|\n\n)/gi, "");
+  result = result.replace(/<\/?tool_call>/gi, "");
   const normalized = result.replace(/\n{3,}/g, "\n\n");
   return normalized.trim();
 };
 var executeToolCall = async (runner, call) => {
-  var _a, _b;
-  const result = await runner.executeTool(call.name, (_a = call.args) != null ? _a : {});
+  var _a;
+  const result = await runner.executeTool(call.name, (_a = call.arguments) != null ? _a : {});
   return {
     name: call.name,
-    result,
-    retriggerMessage: (_b = call.retrigger) == null ? void 0 : _b.message
+    result
   };
 };
 
 // agentLoop.ts
 var runAgentLoop = async ({
-  initialUserMessage,
+  history,
   buildPrompt: buildPrompt2,
   model,
   toolRunner,
@@ -690,15 +688,14 @@ var runAgentLoop = async ({
   callbacks,
   signal
 }) => {
-  var _a, _b, _c, _d, _e, _f;
-  let userMessage = initialUserMessage;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
   let lastResponse = null;
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, userMessage });
-    const prompt = buildPrompt2(userMessage);
+    (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, history });
+    const prompt = buildPrompt2(history);
     (_b = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _b.call(callbacks);
     let streamed = "";
     const response = await model.generateStream(
@@ -713,29 +710,47 @@ var runAgentLoop = async ({
     lastResponse = response;
     (_c = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _c.call(callbacks, response.header);
     const extracted = extractFencedToolCall(response.text);
+    const assistantMessage = {
+      role: "assistant",
+      text: response.text,
+      rawText: response.text,
+      header: response.header ? `STATE: ${response.header.state}` : void 0
+    };
+    if (extracted && !isExtractionError(extracted)) {
+      const toolCallInfo = {
+        name: extracted.toolCall.name,
+        arguments: (_d = extracted.toolCall.arguments) != null ? _d : {}
+      };
+      assistantMessage.toolCalls = [toolCallInfo];
+    }
+    history.push(assistantMessage);
+    (_e = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _e.call(callbacks, assistantMessage);
     if (!extracted) break;
     if (isExtractionError(extracted)) {
-      (_d = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _d.call(callbacks, { error: extracted.error });
-      userMessage = `ERROR: ${extracted.error}
+      (_f = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _f.call(callbacks, { error: extracted.error });
+      const errorMessage = {
+        role: "user",
+        text: `ERROR: ${extracted.error}
 
-Please try again with exactly ONE tool block.`;
+Please try again with exactly ONE tool block.`
+      };
+      history.push(errorMessage);
+      (_g = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _g.call(callbacks, errorMessage);
       continue;
     }
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
-    (_e = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _e.call(callbacks, { name: executed.name, result: executed.result });
-    if (!executed.retriggerMessage) break;
-    if (signal == null ? void 0 : signal.aborted) {
-      throw new DOMException("Aborted", "AbortError");
-    }
-    (_f = callbacks == null ? void 0 : callbacks.onRetrigger) == null ? void 0 : _f.call(callbacks, { message: executed.retriggerMessage });
-    const toolResultText = typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2);
-    userMessage = `${executed.retriggerMessage}
-
-Tool Result (${executed.name}):
-${toolResultText}`;
+    (_h = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _h.call(callbacks, { name: executed.name, result: executed.result });
+    const toolResultMessage = {
+      role: "tool",
+      text: typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2),
+      toolResult: executed.result,
+      toolCallId: `${turn}-${executed.name}`
+    };
+    history.push(toolResultMessage);
+    (_i = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _i.call(callbacks, toolResultMessage);
   }
   if (!lastResponse) {
     throw new Error("Agent loop did not produce a model response");
@@ -751,36 +766,53 @@ var stripLeakedHeaders = (text) => {
   return text.replace(/^STATE:\s*\S+\s*/gim, "").replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, "").replace(/^FINAL:\s*/gim, "").replace(/^TOOL CALLS:\s*/gim, "").replace(/\n{3,}/g, "\n\n").trim();
 };
 var buildConversationHistory = (messages, maxChars, opts) => {
-  var _a, _b, _c;
-  if (maxChars <= 0) return "";
+  var _a, _b, _c, _d, _e, _f;
+  if (maxChars <= 0) return "[]";
   const excludeLatestUserMessage = (_a = opts == null ? void 0 : opts.excludeLatestUserMessage) != null ? _a : false;
-  const lines = [];
-  let used = 0;
+  const entries = [];
   let startIndex = messages.length - 1;
   if (excludeLatestUserMessage && ((_b = messages[startIndex]) == null ? void 0 : _b.role) === "user") {
     startIndex -= 1;
   }
+  const tempEntries = [];
+  let used = 0;
   for (let i = startIndex; i >= 0; i -= 1) {
     const msg = messages[i];
     if (!msg) continue;
-    if (msg.role !== "user" && msg.role !== "assistant") continue;
-    const prefix = msg.role === "user" ? "User: " : "Assistant: ";
-    const base = stripToolBlocks((_c = msg.text) != null ? _c : "").trim();
-    let text = stripLeakedHeaders(stripThinkBlocks(base));
-    if (!text && msg.activityLine) {
-      text = `[${msg.activityLine}]`;
+    let entry;
+    if (msg.role === "user") {
+      const content = ((_c = msg.text) == null ? void 0 : _c.trim()) || "";
+      if (!content) continue;
+      entry = { role: "user", content };
+    } else if (msg.role === "assistant") {
+      const base = stripToolBlocks((_d = msg.text) != null ? _d : "").trim();
+      const content = stripLeakedHeaders(stripThinkBlocks(base));
+      entry = { role: "assistant", content: content || "[action]" };
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        entry.tool_calls = msg.toolCalls.map((tc) => ({
+          name: tc.name,
+          arguments: tc.arguments
+        }));
+      }
+    } else if (msg.role === "tool") {
+      const content = ((_e = msg.text) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.toolResult) != null ? _f : "");
+      entry = {
+        role: "tool",
+        content,
+        tool_call_id: msg.toolCallId
+      };
+    } else {
+      continue;
     }
-    if (!text) continue;
-    const chunk = `${prefix}${text}`;
-    const separator = lines.length === 0 ? "" : "\n";
-    const addition = `${chunk}${separator}`;
-    if (used + addition.length > maxChars) {
+    const entryJson = JSON.stringify(entry);
+    const addition = entryJson.length + 2;
+    if (used + addition > maxChars) {
       break;
     }
-    lines.push(chunk);
-    used += addition.length;
+    tempEntries.push(entry);
+    used += addition;
   }
-  return lines.reverse().join("\n");
+  return JSON.stringify(tempEntries.reverse(), null, 2);
 };
 
 // textParser.ts
@@ -822,16 +854,6 @@ var extractFinal = (text) => {
   const body = text.slice(0, match.index).trim();
   return { final: final || null, body };
 };
-var extractRetriggerMessage = (text) => {
-  var _a, _b;
-  const { header } = extractHeaderAndBody(text);
-  if (!header) return null;
-  const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
-  if (retriggerMatch) {
-    return (_b = (_a = retriggerMatch[2]) == null ? void 0 : _a.trim()) != null ? _b : null;
-  }
-  return null;
-};
 var extractLastReadPath = (text) => {
   var _a;
   const match = text.match(/```tool\s*([\s\S]*?)```/);
@@ -864,7 +886,6 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.activeChatId = null;
     this.chatIndex = [];
     this.hasNamedActiveChat = false;
-    this.lastDocument = null;
     this.ruleManager = new RuleManager({
       read: (path) => this.app.vault.adapter.read(path),
       list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
@@ -1164,8 +1185,10 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
       const memory = await this.ruleManager.loadMemory();
       await this.ensureBaseRulesLoaded();
       const activeNote = this.settings.includeActiveNote ? await this.getActiveNoteContent() : void 0;
-      const buildChatPrompt = (userMessage) => {
-        var _a, _b, _c, _d;
+      const buildChatPrompt = (history) => {
+        var _a;
+        const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
+        const userMessage = (_a = lastUserMsg == null ? void 0 : lastUserMsg.text) != null ? _a : "";
         const fixed = buildPrompt({
           userMessage,
           settings: this.settings,
@@ -1173,53 +1196,32 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
           rules: this.loadedRules,
           memory,
           history: "",
-          lastDocument: null,
           activeNote,
           tools: this.toolRegistry.listTools()
         });
-        const docContent = (_b = (_a = this.lastDocument) == null ? void 0 : _a.content) != null ? _b : "";
-        const docPath = (_d = (_c = this.lastDocument) == null ? void 0 : _c.path) != null ? _d : "unknown";
-        const docHeader = docContent.trim() ? `Last Document Context (${docPath}):
-` : "";
-        const maxDocChars = Math.min(4e3, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
-        const docSection = docContent.trim() ? { path: docPath, content: docContent.slice(0, maxDocChars) } : null;
-        const fixedWithDoc = buildPrompt({
-          userMessage,
-          settings: this.settings,
-          coreRules,
-          rules: this.loadedRules,
-          memory,
-          history: "",
-          // FIX: Pass actual history
-          lastDocument: docSection,
-          activeNote,
-          tools: this.toolRegistry.listTools()
-        });
-        const historyBudget = Math.max(0, this.settings.maxContextChars - fixedWithDoc.length);
-        const history = buildConversationHistory(this.messages, historyBudget, { excludeLatestUserMessage: true });
+        const historyBudget = Math.max(0, this.settings.maxContextChars - fixed.length);
+        const historyJson = buildConversationHistory(history, historyBudget, { excludeLatestUserMessage: true });
         return buildPrompt({
           userMessage,
           settings: this.settings,
           coreRules,
           rules: this.loadedRules,
           memory,
-          history,
-          // FIX: Pass actual history
-          lastDocument: docSection,
+          history: historyJson,
           activeNote,
           tools: this.toolRegistry.listTools()
         });
       };
       let assistantText = "";
       const result = await runAgentLoop({
-        initialUserMessage: prompt,
+        history: this.messages,
         buildPrompt: buildChatPrompt,
         model: this.modelClient,
         toolRunner: this.toolRunner,
         signal: this.abortController.signal,
         callbacks: {
-          onTurnStart: ({ turn }) => {
-            this.pushMessage("assistant", "");
+          onTurnStart: ({ turn, history }) => {
+            this.messages = history;
           },
           onAssistantStart: () => {
             assistantText = "";
@@ -1235,12 +1237,6 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
               if ((readPath == null ? void 0 : readPath.startsWith("AstraCodex/Rules/")) && typeof result2 === "string") {
                 const ruleName = (_b = (_a = readPath.split("/").pop()) == null ? void 0 : _a.replace(/\.md$/, "")) != null ? _b : readPath;
                 this.loadedRules[ruleName] = result2;
-              } else if (typeof result2 === "string") {
-                const maxDocChars = Math.min(4e3, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
-                this.lastDocument = {
-                  path: readPath != null ? readPath : "unknown",
-                  content: result2.slice(0, maxDocChars)
-                };
               }
             }
             const { header } = extractHeaderAndBody(assistantText);
@@ -1255,14 +1251,9 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
                 this.stateMachine.setNeedsConfirmation(needsConfirmMatch[1] === "true");
               }
             }
-            const retriggerMessage = extractRetriggerMessage(assistantText);
-            if (retriggerMessage) {
-              if (this.stateMachine.canAct()) {
-                this.pushMessage("user", retriggerMessage);
-              } else {
-                this.pushMessage("assistant", "I can't complete that action right now. Please let me know what state I should be in to proceed.");
-              }
-            }
+          },
+          onMessageAdded: (message) => {
+            this.renderMessages();
           }
         }
       });
@@ -1332,7 +1323,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
     });
   }
   async switchChat(chatId) {
-    var _a, _b;
+    var _a;
     if (!chatId) return;
     const record = await this.chatStore.loadChat(chatId);
     const restored = restoreChatState(record);
@@ -1341,8 +1332,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
     this.parsedHeader = restored.state.header;
     this.stateMachine.setState(restored.state.state || "idle");
     this.messages = restored.messages;
-    this.lastDocument = (_a = restored.lastDocument) != null ? _a : null;
-    this.hasNamedActiveChat = ((_b = record.meta.title) != null ? _b : "").trim() !== "" && record.meta.title !== "New Chat";
+    this.hasNamedActiveChat = ((_a = record.meta.title) != null ? _a : "").trim() !== "" && record.meta.title !== "New Chat";
     this.loadedRules = {};
     this.renderChatOptions();
     this.refreshUI();
@@ -1380,8 +1370,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
       },
       settings: this.settings,
       state: { header: this.parsedHeader, state: this.stateMachine.state },
-      messages: this.messages,
-      lastDocument: this.lastDocument
+      messages: this.messages
     };
     await this.chatStore.saveChat(record);
     this.chatIndex = await this.chatStore.loadIndex();

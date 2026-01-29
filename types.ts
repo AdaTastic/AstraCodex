@@ -1,4 +1,4 @@
-export type Role = 'user' | 'assistant' | 'system';
+export type Role = 'user' | 'assistant' | 'system' | 'tool';
 
 /**
  * Derived state for UI (face animation, status indicators).
@@ -41,6 +41,14 @@ export type MessageSegment =
   | { type: 'text'; content: string }
   | { type: 'tool'; activity: string; toolName: string; result?: ToolResultDisplay };
 
+/**
+ * Tool call in OpenAI format.
+ */
+export interface ToolCallInfo {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface Message {
   role: Role;
   text: string;
@@ -54,6 +62,12 @@ export interface Message {
   activityLine?: string | null;
   /** Parsed segments for agentic display (text interspersed with tool calls) */
   segments?: MessageSegment[];
+  /** Tool calls made in this message (for assistant role) */
+  toolCalls?: ToolCallInfo[];
+  /** Tool result content (for tool role) */
+  toolResult?: unknown;
+  /** ID linking tool result to tool call */
+  toolCallId?: string;
 }
 
 export interface ParsedHeader {

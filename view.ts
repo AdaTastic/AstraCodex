@@ -50,7 +50,6 @@ export class AgenticChatView extends ItemView {
   private activeChatId: string | null = null;
   private chatIndex: ChatMeta[] = [];
   private hasNamedActiveChat = false;
-  private lastDocument: { path: string; content: string } | null = null;
   private ruleManager = new RuleManager({
     read: (path) => this.app.vault.adapter.read(path),
     list: (prefix) => this.app.vault.adapter.list(prefix).then((list) => [
@@ -400,8 +399,12 @@ export class AgenticChatView extends ItemView {
       await this.ensureBaseRulesLoaded();
       const activeNote = this.settings.includeActiveNote ? await this.getActiveNoteContent() : undefined;
 
-      const buildChatPrompt = (userMessage: string) => {
-        // 1) Compute fixed prompt length with no history & no last document.
+      const buildChatPrompt = (history: Message[]) => {
+        // Get the latest user message from history
+        const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
+        const userMessage = lastUserMsg?.text ?? '';
+
+        // 1) Compute fixed prompt length with no history
         const fixed = buildPrompt({
           userMessage,
           settings: this.settings,
@@ -409,47 +412,22 @@ export class AgenticChatView extends ItemView {
           rules: this.loadedRules,
           memory,
           history: '',
-          lastDocument: null,
           activeNote,
           tools: this.toolRegistry.listTools()
         });
 
-        // 2) Decide how much room to reserve for the last document context.
-        const docContent = this.lastDocument?.content ?? '';
-        const docPath = this.lastDocument?.path ?? 'unknown';
-        const docHeader = docContent.trim()
-          ? `Last Document Context (${docPath}):\n`
-          : '';
+        // 2) Budget remaining space for conversation history (OpenAI JSON format)
+        const historyBudget = Math.max(0, this.settings.maxContextChars - fixed.length);
+        const historyJson = buildConversationHistory(history, historyBudget, { excludeLatestUserMessage: true });
 
-        const maxDocChars = Math.min(4000, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
-        const docSection = docContent.trim()
-          ? { path: docPath, content: docContent.slice(0, maxDocChars) }
-          : null;
-
-        // 3) Budget remaining space for conversation history.
-        const fixedWithDoc = buildPrompt({
-          userMessage,
-          settings: this.settings,
-          coreRules,
-          rules: this.loadedRules,
-          memory,
-          history: '', // FIX: Pass actual history
-          lastDocument: docSection,
-          activeNote,
-          tools: this.toolRegistry.listTools()
-        });
-        const historyBudget = Math.max(0, this.settings.maxContextChars - fixedWithDoc.length);
-        const history = buildConversationHistory(this.messages, historyBudget, { excludeLatestUserMessage: true });
-
-        // 4) Build final prompt including both history and last document.
+        // 3) Build final prompt with history
         return buildPrompt({
           userMessage,
           settings: this.settings,
           coreRules,
           rules: this.loadedRules,
           memory,
-          history, // FIX: Pass actual history
-          lastDocument: docSection,
+          history: historyJson,
           activeNote,
           tools: this.toolRegistry.listTools()
         });
@@ -458,15 +436,15 @@ export class AgenticChatView extends ItemView {
       let assistantText = '';
 
       const result = await runAgentLoop({
-        initialUserMessage: prompt,
+        history: this.messages,
         buildPrompt: buildChatPrompt,
         model: this.modelClient,
         toolRunner: this.toolRunner,
         signal: this.abortController.signal,
         callbacks: {
-          onTurnStart: ({ turn }) => {
-            // Create a new assistant bubble per turn so retriggers don't overwrite.
-            this.pushMessage('assistant', '');
+          onTurnStart: ({ turn, history }) => {
+            // Sync local messages with agent loop history
+            this.messages = history;
           },
           onAssistantStart: () => {
             assistantText = '';
@@ -482,14 +460,6 @@ export class AgenticChatView extends ItemView {
               if (readPath?.startsWith('AstraCodex/Rules/') && typeof result === 'string') {
                 const ruleName = readPath.split('/').pop()?.replace(/\.md$/, '') ?? readPath;
                 this.loadedRules[ruleName] = result;
-              } else if (typeof result === 'string') {
-                // Store last non-rules document context for follow-up questions.
-                // Keep it small enough to reliably fit inside maxContextChars.
-                const maxDocChars = Math.min(4000, Math.max(500, Math.floor(this.settings.maxContextChars / 2)));
-                this.lastDocument = {
-                  path: readPath ?? 'unknown',
-                  content: result.slice(0, maxDocChars)
-                };
               }
             }
             
@@ -506,19 +476,10 @@ export class AgenticChatView extends ItemView {
                 this.stateMachine.setNeedsConfirmation(needsConfirmMatch[1] === 'true');
               }
             }
-            
-            // Handle retrigger messages.
-            const retriggerMessage = extractRetriggerMessage(assistantText);
-            if (retriggerMessage) {
-              // Only process retrigger if state machine allows action.
-              if (this.stateMachine.canAct()) {
-                // Send the retrigger message back to the model.
-                this.pushMessage('user', retriggerMessage);
-              } else {
-                // Can't act, tell the model to try again with a valid state.
-                this.pushMessage('assistant', 'I can\'t complete that action right now. Please let me know what state I should be in to proceed.');
-              }
-            }
+          },
+          onMessageAdded: (message) => {
+            // Keep UI in sync with agent loop messages
+            this.renderMessages();
           }
         }
       });
@@ -608,7 +569,6 @@ export class AgenticChatView extends ItemView {
     this.parsedHeader = restored.state.header;
     this.stateMachine.setState(restored.state.state || 'idle');
     this.messages = restored.messages;
-    this.lastDocument = restored.lastDocument ?? null;
     this.hasNamedActiveChat = (record.meta.title ?? '').trim() !== '' && record.meta.title !== 'New Chat';
     // no checkbox
     this.loadedRules = {};
@@ -651,8 +611,7 @@ export class AgenticChatView extends ItemView {
       },
       settings: this.settings,
       state: { header: this.parsedHeader, state: this.stateMachine.state },
-      messages: this.messages,
-      lastDocument: this.lastDocument
+      messages: this.messages
     };
     await this.chatStore.saveChat(record);
     this.chatIndex = await this.chatStore.loadIndex();

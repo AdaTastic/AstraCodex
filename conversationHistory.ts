@@ -2,13 +2,10 @@ import type { Message } from './types';
 import { stripToolBlocks } from './toolOrchestrator';
 
 const stripThinkBlocks = (text: string): string => {
-  // Remove any <think>...</think> blocks that might have leaked into message text.
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 };
 
 const stripLeakedHeaders = (text: string): string => {
-  // Remove legacy header lines that may have leaked into old chat history.
-  // This prevents the model from mimicking header patterns it sees in context.
   return text
     .replace(/^STATE:\s*\S+\s*/gim, '')
     .replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, '')
@@ -18,14 +15,104 @@ const stripLeakedHeaders = (text: string): string => {
     .trim();
 };
 
+/**
+ * OpenAI-compatible message format for history.
+ */
+interface HistoryEntry {
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+  tool_call_id?: string;
+}
+
+/**
+ * Builds conversation history in OpenAI-compatible JSON format.
+ * 
+ * Output format:
+ * [
+ *   {"role": "user", "content": "..."},
+ *   {"role": "assistant", "content": "...", "tool_calls": [...]},
+ *   {"role": "tool", "content": "...", "tool_call_id": "..."}
+ * ]
+ */
 export const buildConversationHistory = (
   messages: Message[],
   maxChars: number,
   opts?: {
-    /**
-     * If true, will skip the newest message when it is a user message.
-     * Useful because the prompt already contains the latest "User Request".
-     */
+    excludeLatestUserMessage?: boolean;
+  }
+): string => {
+  if (maxChars <= 0) return '[]';
+
+  const excludeLatestUserMessage = opts?.excludeLatestUserMessage ?? false;
+  const entries: HistoryEntry[] = [];
+
+  let startIndex = messages.length - 1;
+  if (excludeLatestUserMessage && messages[startIndex]?.role === 'user') {
+    startIndex -= 1;
+  }
+
+  // Build newest -> oldest so we can trim oldest first by stopping when we hit maxChars.
+  const tempEntries: HistoryEntry[] = [];
+  let used = 0;
+
+  for (let i = startIndex; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (!msg) continue;
+
+    let entry: HistoryEntry;
+
+    if (msg.role === 'user') {
+      const content = msg.text?.trim() || '';
+      if (!content) continue;
+      entry = { role: 'user', content };
+    } else if (msg.role === 'assistant') {
+      const base = stripToolBlocks(msg.text ?? '').trim();
+      const content = stripLeakedHeaders(stripThinkBlocks(base));
+      
+      entry = { role: 'assistant', content: content || '[action]' };
+      
+      // Add tool_calls if present
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        entry.tool_calls = msg.toolCalls.map(tc => ({
+          name: tc.name,
+          arguments: tc.arguments
+        }));
+      }
+    } else if (msg.role === 'tool') {
+      const content = msg.text?.trim() || JSON.stringify(msg.toolResult ?? '');
+      entry = { 
+        role: 'tool', 
+        content,
+        tool_call_id: msg.toolCallId 
+      };
+    } else {
+      continue;
+    }
+
+    const entryJson = JSON.stringify(entry);
+    const addition = entryJson.length + 2; // comma + spacing
+
+    if (used + addition > maxChars) {
+      break;
+    }
+
+    tempEntries.push(entry);
+    used += addition;
+  }
+
+  // Reverse to oldest -> newest for readability.
+  return JSON.stringify(tempEntries.reverse(), null, 2);
+};
+
+/**
+ * Legacy format builder - returns plain text for backward compatibility.
+ * Use buildConversationHistory for new OpenAI-style format.
+ */
+export const buildConversationHistoryText = (
+  messages: Message[],
+  maxChars: number,
+  opts?: {
     excludeLatestUserMessage?: boolean;
   }
 ): string => {
@@ -40,23 +127,29 @@ export const buildConversationHistory = (
     startIndex -= 1;
   }
 
-  // Build newest -> oldest so we can trim oldest first by stopping when we hit maxChars.
   for (let i = startIndex; i >= 0; i -= 1) {
     const msg = messages[i];
     if (!msg) continue;
-    if (msg.role !== 'user' && msg.role !== 'assistant') continue;
+    if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'tool') continue;
 
-    const prefix = msg.role === 'user' ? 'User: ' : 'Assistant: ';
-    // IMPORTANT: history should not include msg.think or rawText.
-    // We only include the user-facing msg.text, but we still strip tool blocks and any leaked <think> blocks.
-    const base = stripToolBlocks(msg.text ?? '').trim();
-    let text = stripLeakedHeaders(stripThinkBlocks(base));
-    
-    // Fall back to activityLine when text is empty (e.g., tool-only messages).
-    // This ensures the model "remembers" what actions it took.
-    if (!text && msg.activityLine) {
-      text = `[${msg.activityLine}]`;
+    let prefix: string;
+    let text: string;
+
+    if (msg.role === 'user') {
+      prefix = 'User: ';
+      text = msg.text?.trim() || '';
+    } else if (msg.role === 'assistant') {
+      prefix = 'Assistant: ';
+      const base = stripToolBlocks(msg.text ?? '').trim();
+      text = stripLeakedHeaders(stripThinkBlocks(base));
+      if (!text && msg.activityLine) {
+        text = `[${msg.activityLine}]`;
+      }
+    } else {
+      prefix = 'Tool Result: ';
+      text = msg.text?.trim() || JSON.stringify(msg.toolResult ?? '');
     }
+
     if (!text) continue;
 
     const chunk = `${prefix}${text}`;
@@ -71,6 +164,5 @@ export const buildConversationHistory = (
     used += addition.length;
   }
 
-  // Reverse to oldest -> newest for readability.
   return lines.reverse().join('\n');
 };

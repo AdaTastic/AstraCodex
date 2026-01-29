@@ -4,12 +4,15 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.spec.ts'],
-    globals: true,
-    setupFiles: ['tests/setup.ts']
+    globals: false,
+    passWithNoTests: false
   },
   resolve: {
     alias: {
       'obsidian': './node_modules/obsidian'
     }
+  },
+  esbuild: {
+    target: 'node18'
   }
 });

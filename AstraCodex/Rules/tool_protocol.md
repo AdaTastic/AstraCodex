@@ -1,35 +1,68 @@
 # Tool Protocol
 
-## Tool calls
+## Tool Call Format
 
-The assistant may request tools using **either** of these formats:
+To use a tool, output a `<tool_call>` block with JSON inside:
 
-### Format 1: Fenced Markdown (preferred)
-```tool
-{"name":"list","args":{"prefix":""},"retrigger":{"message":"..."}}
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "file.md"}}
+</tool_call>
 ```
-
-### Format 2: XML-style (alternative)
-```
-<tool_call>{"name":"read","args":{"path":"..."}}</tool_call>
-```
-
-Both formats are equivalent. Use whichever is natural for your model.
 
 ### Schema
-- `name` (string): tool name.
-- `args` (object): tool arguments.
-- `retrigger.message` (string, optional): if provided, the application should re-run the model after tool execution.
+- `name` (string, required): The tool name
+- `arguments` (object, optional): Tool-specific arguments
+
+### Example Tool Calls
+
+**List files:**
+```xml
+<tool_call>
+{"name": "list", "arguments": {"prefix": "AstraCodex/"}}
+</tool_call>
+```
+
+**Read a file:**
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "AstraCodex/Memory.md"}}
+</tool_call>
+```
+
+**Write a file (requires confirmation):**
+```xml
+<tool_call>
+{"name": "write", "arguments": {"path": "notes/new.md", "content": "# New Note\n\nContent here."}}
+</tool_call>
+```
+
+## Agent Loop Behavior
+
+1. You output a response with `<tool_call>` block
+2. The system executes the tool
+3. The tool result is added to conversation history as a `role: "tool"` message
+4. You are called again with the updated history
+5. You see the result and decide: output another tool call, or provide final answer
+6. Loop continues until you respond without a `<tool_call>` block
+
+**Important:**
+- Output AT MOST ONE tool block per response
+- Do NOT output multiple tool calls - only the last one will be executed
+- Tool results appear automatically in your conversation history
 
 ## Safety
-- `list` and `read` are safe operations and do NOT require confirmation.
-- `write`, `append`, and `line_edit` are write-capable tools and DO require explicit user confirmation.
 
-## Header state constraints
-- `STATE:` must be one of the states listed in `AstraCodex/states.md`.
-- Do not output translated state labels (e.g., avoid non-English tokens like "待命").
+- `list` and `read` are safe operations and do NOT require confirmation
+- `write`, `append`, and `line_edit` are write-capable tools and DO require explicit user confirmation
 
-## State selection shortcut
+## Available Tools
 
-When choosing `STATE:`, follow the deterministic decision tree in `AstraCodex/states.md`.
-Do not spend tokens debating state labels.
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `list` | `prefix` (string) | List files/folders with given prefix |
+| `read` | `path` (string) | Read file contents |
+| `write` | `path`, `content` (strings) | Write/create file (confirmation required) |
+| `append` | `path`, `content` (strings) | Append to file (confirmation required) |
+| `line_edit` | `path`, `startLine`, `endLine`, `newContent` | Edit specific lines (confirmation required) |
+| `active_file` | (none) | Get currently active file path |

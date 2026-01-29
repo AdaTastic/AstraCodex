@@ -8,8 +8,8 @@ interface PromptInput {
   voiceOverride?: string;
   rules?: Record<string, string>;
   memory?: string;
+  /** OpenAI-style JSON array of conversation history */
   history?: string;
-  lastDocument?: { path: string; content: string } | null;
   activeNote?: string;
   selection?: string;
   tools?: Array<{ name: string; description: string; params?: Record<string, string> }>;
@@ -27,10 +27,17 @@ Everything OUTSIDE <think> tags is shown directly to the user.
 IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
 
 TOOL CALLS:
-See AstraCodex/Rules/tool_protocol.md for supported formats.
+To use a tool, output a tool_call block:
+
+<tool_call>
+{"name": "read", "arguments": {"path": "file.md"}}
+</tool_call>
+
+Rules:
 - Output AT MOST ONE tool block per response
 - Do NOT include tool blocks inside <think> tags
-- If you output multiple tool blocks, only the last one will be executed
+- Tool results will be added to conversation history automatically
+- You will be called again after each tool execution to see the result
 
 FILE READING GUIDANCE:
 - If the user asks to read a file by name/title, call \`list\` first to find the correct path.
@@ -53,7 +60,6 @@ export const buildPrompt = ({
   rules,
   memory,
   history,
-  lastDocument,
   activeNote,
   selection,
   tools
@@ -86,13 +92,7 @@ export const buildPrompt = ({
     contextSections.push(`Tools:\n${toolBlock}`);
   }
 
-  // IMPORTANT: lastDocument comes BEFORE history so it survives truncation.
-  // The model needs to remember what it just read more than old conversation turns.
-  if (lastDocument?.content?.trim()) {
-    contextSections.push(`Last Document Context (${lastDocument.path}):\n${lastDocument.content.trim()}`);
-  }
-
-  // History is lower priority - can be truncated if context is tight.
+  // History contains everything including tool results (OpenAI format)
   if (typeof history === 'string' && history.trim().length > 0) {
     contextSections.push(`Conversation History:\n${history.trim()}`);
   }
