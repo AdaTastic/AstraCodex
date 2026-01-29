@@ -1,6 +1,6 @@
-import type { Message, ParsedHeader } from './types';
+import type { Message, ParsedHeader, MessageSegment } from './types';
 import { stripToolBlocks, formatToolActivity } from './toolOrchestrator';
-import { extractThink, extractHeaderAndBody, extractFinal, getActivityLine } from './textParser';
+import { extractThink, extractHeaderAndBody, extractFinal, getActivityLine, parseMessageSegments } from './textParser';
 
 export interface MessageRenderElements {
   transcriptEl: HTMLElement;
@@ -47,26 +47,84 @@ export const renderMessages = (
       }
     }
 
-    const displayText =
-      msg.text && msg.text.trim().length > 0
-        ? msg.text
-        : msg.role === 'assistant' && msg.think
-          ? '(No final answer was produced — expand Think)'
-          : msg.text;
+    // Render segments for agentic display (assistant messages with segments)
+    if (msg.role === 'assistant' && msg.segments && msg.segments.length > 0) {
+      renderSegments(bubble, msg.segments);
+    } else {
+      // Fallback to legacy single-text rendering
+      const displayText =
+        msg.text && msg.text.trim().length > 0
+          ? msg.text
+          : msg.role === 'assistant' && msg.think
+            ? '(No final answer was produced — expand Think)'
+            : msg.text;
 
-    if (msg.role === 'assistant' && msg.activityLine) {
-      bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
+      if (msg.role === 'assistant' && msg.activityLine) {
+        bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
+      }
+
+      bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
     }
-
-    bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
   });
   
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 };
 
 /**
+ * Renders message segments (text and tool calls) in sequence.
+ */
+const renderSegments = (bubble: HTMLElement, segments: MessageSegment[]): void => {
+  for (const segment of segments) {
+    if (segment.type === 'text') {
+      if (segment.content.trim()) {
+        (bubble as any).createDiv({ cls: 'agentic-chat-text', text: segment.content });
+      }
+    } else if (segment.type === 'tool') {
+      const toolContainer = (bubble as any).createDiv({ cls: 'agentic-chat-tool-segment' });
+      
+      // Activity line (e.g., "🔍 searching: ...")
+      toolContainer.createDiv({ cls: 'agentic-chat-tool-activity', text: segment.activity });
+      
+      // Tool result (if available)
+      if (segment.result) {
+        renderToolResult(toolContainer, segment.result);
+      }
+    }
+  }
+};
+
+/**
+ * Renders a tool result display.
+ */
+const renderToolResult = (container: HTMLElement, result: NonNullable<Extract<MessageSegment, { type: 'tool' }>['result']>): void => {
+  const resultEl = (container as any).createDiv({ cls: 'agentic-chat-tool-result' });
+  
+  if (result.type === 'list' && result.items) {
+    // Show file list
+    const listEl = resultEl.createDiv({ cls: 'agentic-chat-file-list' });
+    const displayItems = result.items.slice(0, 10); // Limit display
+    for (const item of displayItems) {
+      listEl.createDiv({ cls: 'agentic-chat-file-item', text: `├─ ${item}` });
+    }
+    if (result.items.length > 10) {
+      listEl.createDiv({ cls: 'agentic-chat-file-item', text: `└─ ... and ${result.items.length - 10} more` });
+    }
+  } else if (result.type === 'read' && result.path) {
+    resultEl.createDiv({ cls: 'agentic-chat-read-result', text: `📄 ${result.path}` });
+    if (result.preview) {
+      const previewEl = resultEl.createDiv({ cls: 'agentic-chat-preview' });
+      previewEl.createEl('pre', { text: result.preview.slice(0, 200) + (result.preview.length > 200 ? '...' : '') });
+    }
+  } else if ((result.type === 'write' || result.type === 'append' || result.type === 'line_edit') && result.success) {
+    resultEl.createDiv({ cls: 'agentic-chat-write-result', text: `✅ ${result.path ?? 'File updated'}` });
+  } else if (result.type === 'error' && result.error) {
+    resultEl.createDiv({ cls: 'agentic-chat-error-result', text: `❌ ${result.error}` });
+  }
+};
+
+/**
  * Updates the last assistant message with new streaming text.
- * Parses think blocks, headers, and tool activity.
+ * Parses think blocks, headers, tool activity, and segments.
  */
 export const updateLastAssistantMessage = (
   messages: Message[],
@@ -79,7 +137,10 @@ export const updateLastAssistantMessage = (
   // Persist raw model output for debugging
   last.rawText = text;
 
-  // Get activity line from tool blocks
+  // Parse segments for agentic display
+  last.segments = parseMessageSegments(text);
+
+  // Get activity line from tool blocks (legacy, for backwards compat)
   const activityLine = getActivityLine(text, formatToolActivity);
   last.activityLine = activityLine;
 

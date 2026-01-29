@@ -27,20 +27,22 @@ describe('PromptBuilder', () => {
       coreRules
     });
 
-    expect(prompt).toContain('You MUST respond with a header in the format:');
-    expect(prompt).toContain('STATE:');
-    expect(prompt).toContain('NEEDS_CONFIRMATION:');
-    expect(prompt).not.toContain('PROPOSED_ACTION:');
-    expect(prompt).toContain('FINAL:');
+    // New simplified format - no STATE/NEEDS_CONFIRMATION/FINAL headers
+    expect(prompt).toContain('RESPONSE FORMAT:');
+    expect(prompt).toContain('<think>');
+    expect(prompt).toContain('</think>');
     expect(prompt).toContain('TOOL CALLS:');
     expect(prompt).toContain('```tool');
-    expect(prompt).toContain('Do NOT describe tool calls in plain text');
     expect(prompt).toContain('FILE READING GUIDANCE:');
+    // Still includes core rules
     expect(prompt).toContain('CHARTER');
     expect(prompt).toContain('STATES');
     expect(prompt).toContain('VOICE');
     expect(prompt).toContain('User Request:');
     expect(prompt).toContain('hello');
+    // Should NOT have old header requirements
+    expect(prompt).not.toContain('You MUST respond with a header in the format:');
+    expect(prompt).not.toContain('FINAL:');
   });
 
   it('truncates memory to maxMemoryChars', () => {

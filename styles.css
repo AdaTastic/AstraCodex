@@ -189,3 +189,86 @@
   padding: 6px 12px;
   cursor: pointer;
 }
+
+/* Agentic Tool Display Styles */
+.agentic-chat-tool-activity {
+  font-size: 0.8rem;
+  color: var(--text-accent);
+  padding: 4px 8px;
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+  margin: 6px 0;
+  font-family: var(--font-monospace);
+}
+
+.agentic-chat-tool-segment {
+  margin: 8px 0;
+  padding: 6px 0;
+  border-top: 1px dashed var(--background-modifier-border);
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.agentic-chat-tool-segment:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+
+.agentic-chat-tool-segment:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.agentic-chat-tool-result {
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+.agentic-chat-file-list {
+  font-family: var(--font-monospace);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background: var(--background-secondary-alt);
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.agentic-chat-file-item {
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentic-chat-read-result {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.agentic-chat-preview {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--background-secondary-alt);
+  border-radius: 4px;
+  max-height: 100px;
+  overflow: hidden;
+}
+
+.agentic-chat-preview pre {
+  margin: 0;
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+.agentic-chat-write-result {
+  color: var(--text-success, #58a55c);
+  font-size: 0.75rem;
+}
+
+.agentic-chat-error-result {
+  color: var(--text-error, #e55);
+  font-size: 0.75rem;
+}

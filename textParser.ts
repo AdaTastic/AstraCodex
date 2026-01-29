@@ -1,4 +1,5 @@
-import { extractFencedToolCall, isExtractionError } from './toolOrchestrator';
+import { extractFencedToolCall, isExtractionError, formatToolActivity, type ToolCall } from './toolOrchestrator';
+import type { DerivedState, MessageSegment } from './types';
 
 /**
  * Extracts the first <think>...</think> block from model output.
@@ -104,4 +105,120 @@ export const getActivityLine = (text: string, formatFn: (call: { name: string; a
   const extracted = extractFencedToolCall(text);
   if (!extracted || isExtractionError(extracted)) return null;
   return formatFn(extracted.toolCall);
+};
+
+/**
+ * Derives UI state from actual events (not model output).
+ * Used for face animation and status indicators.
+ */
+export const deriveState = (context: {
+  isStreaming: boolean;
+  toolCall?: ToolCall | null;
+  requiresConfirmation: boolean;
+  hasError: boolean;
+}): DerivedState => {
+  if (context.hasError) return 'error';
+  if (context.requiresConfirmation) return 'awaiting_confirmation';
+
+  if (context.toolCall) {
+    const toolName = context.toolCall.name;
+    if (toolName === 'read') return 'reading';
+    if (toolName === 'list') return 'searching';
+    if (toolName === 'write') return 'writing';
+    if (toolName === 'append') return 'appending';
+    if (toolName === 'line_edit') return 'editing';
+    if (toolName === 'active_file') return 'checking';
+    return 'thinking'; // unknown tool
+  }
+
+  if (context.isStreaming) return 'thinking';
+  return 'idle';
+};
+
+/**
+ * Parses raw model output into segments for agentic display.
+ * Splits text at tool block boundaries.
+ * 
+ * Example input:
+ *   "I'll search for that. ```tool {...}``` Found it! ```tool {...}``` Here's what I see."
+ * 
+ * Returns:
+ *   [
+ *     { type: 'text', content: "I'll search for that." },
+ *     { type: 'tool', activity: 'searching: ...', toolName: 'list' },
+ *     { type: 'text', content: "Found it!" },
+ *     { type: 'tool', activity: 'reading: ...', toolName: 'read' },
+ *     { type: 'text', content: "Here's what I see." }
+ *   ]
+ */
+export const parseMessageSegments = (rawText: string): MessageSegment[] => {
+  const segments: MessageSegment[] = [];
+  const toolBlockRegex = /```tool\s*([\s\S]*?)```/g;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = toolBlockRegex.exec(rawText)) !== null) {
+    // Text before this tool block
+    const textBefore = rawText.slice(lastIndex, match.index).trim();
+    if (textBefore) {
+      // Clean up the text - remove leaked headers
+      const cleanedText = cleanSegmentText(textBefore);
+      if (cleanedText) {
+        segments.push({ type: 'text', content: cleanedText });
+      }
+    }
+
+    // Parse the tool block
+    try {
+      const toolJson = match[1].trim();
+      const parsed = JSON.parse(toolJson) as ToolCall;
+      if (parsed?.name) {
+        const activity = formatToolActivity(parsed);
+        segments.push({
+          type: 'tool',
+          activity,
+          toolName: parsed.name
+        });
+      }
+    } catch {
+      // Invalid JSON - skip this tool block
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Text after the last tool block
+  const textAfter = rawText.slice(lastIndex).trim();
+  if (textAfter) {
+    const cleanedText = cleanSegmentText(textAfter);
+    if (cleanedText) {
+      segments.push({ type: 'text', content: cleanedText });
+    }
+  }
+
+  return segments;
+};
+
+/**
+ * Cleans up text for display in a segment.
+ * Removes leaked headers, think blocks, and normalizes whitespace.
+ */
+const cleanSegmentText = (text: string): string => {
+  let cleaned = text;
+
+  // Remove think blocks (including malformed ones without opening tag)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  cleaned = cleaned.replace(/^[\s\S]*?<\/think>/i, ''); // Malformed: only closing tag
+
+  // Remove leaked header lines (STATE:, NEEDS_CONFIRMATION:, FINAL:)
+  cleaned = cleaned.replace(/^STATE:\s*\S+\s*/gim, '');
+  cleaned = cleaned.replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, '');
+  cleaned = cleaned.replace(/^FINAL:\s*/gim, '');
+  cleaned = cleaned.replace(/^TOOL CALLS:\s*/gim, '');
+
+  // Normalize whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  return cleaned;
 };
