@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "id": "chat-2026-01-29T06-23-29-523Z",
+    "title": "Read this file for me Nextcloud/Nextcloud Server…",
+    "createdAt": "2026-01-29T06:23:29.523Z",
+    "updatedAt": "2026-01-29T06:23:51.574Z"
+  },
+  "settings": {
+    "baseUrl": "http://127.0.0.1:11434",
+    "model": "glm47-tools-16k",
+    "includeActiveNote": false,
+    "maxContextChars": 120000,
+    "maxMemoryChars": 10000,
+    "contextSliderValue": 50
+  },
+  "state": {
+    "header": {
+      "state": "idle",
+      "needsConfirmation": false
+    },
+    "state": "idle"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "text": "Read this file for me Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md",
+      "headerExpanded": false
+    },
+    {
+      "role": "assistant",
+      "text": "",
+      "headerExpanded": false,
+      "rawText": "<tool_call>{\"name\":\"active_file\",\"args\":{},\"retrigger\":{\"message\":\"If the tool result is null, ask the user to open a file and try again. If it is a path, request a read of that path.\"}}</arg_value></tool_call>",
+      "activityLine": "reading: [current file]"
+    },
+    {
+      "role": "assistant",
+      "text": "The user wants me to read the file \"Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md\".\n\n1.  The user provided a filename. I should use the file inspection workflow.\n2.  I need to check if this file exists. I'll use `list` with an appropriate prefix to find it.\n3.  If found, I'll read it.</think>",
+      "headerExpanded": false,
+      "rawText": "The user wants me to read the file \"Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md\".\n\n1.  The user provided a filename. I should use the file inspection workflow.\n2.  I need to check if this file exists. I'll use `list` with an appropriate prefix to find it.\n3.  If found, I'll read it.</think><tool_call>list\n{\"prefix\":\"Nextcloud\"}\n<tool_call>list\n{\"prefix\":\"Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md\"}\n<tool_call>read\n{\"path\":\"Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md\"}</arg_value></tool_call>",
+      "activityLine": null
+    },
+    {
+      "role": "user",
+      "text": "Read this file for me Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md",
+      "headerExpanded": false
+    },
+    {
+      "role": "assistant",
+      "text": "",
+      "header": "STATE: idle\nNEEDS_CONFIRMATION: false",
+      "headerExpanded": false,
+      "rawText": "<tool_call>list\n{\"prefix\":\"Nextcloud/Nextcloud Server Rebuild Plan (Budget-Constrained, Reliable).md\"}</arg_value></tool_call>",
+      "activityLine": null
+    }
+  ],
+  "lastDocument": null
+}
