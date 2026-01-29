@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "id": "chat-2026-01-29T04-41-35-848Z",
+    "title": "Can you read this file? Harmful Algal Blooms (HAB…",
+    "createdAt": "2026-01-29T04:41:35.848Z",
+    "updatedAt": "2026-01-29T04:41:58.424Z"
+  },
+  "settings": {
+    "baseUrl": "http://127.0.0.1:11434",
+    "model": "glm47-tools-16k",
+    "includeActiveNote": false,
+    "maxContextChars": 8000,
+    "maxMemoryChars": 2000,
+    "contextSliderValue": 50
+  },
+  "state": {
+    "header": {
+      "state": "thinking",
+      "needsConfirmation": false
+    },
+    "state": "thinking"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "text": "Can you read this file?\nHarmful Algal Blooms (HABs).md",
+      "headerExpanded": false
+    },
+    {
+      "role": "assistant",
+      "text": "The user wants to read a file named \"Harmful Algal Blooms (HABs).md\". I need to use the `list` tool to find the correct path for this file, and then use the `read` tool to read it.\n\n1.  **State Determination**: I am about to call a tool, so I am in the `acting` state. Since the tool is `list` (read-only), `NEEDS_CONFIRMATION` is `false`.\n2.  **Action**: Call `list` to find the file path.\n3.  **Next Step**: Once I have the path, I will call `read`.\n\nLet's call the `list` tool first.\n\n</think>STATE: acting",
+      "header": "NEEDS_CONFIRMATION: false",
+      "headerExpanded": false,
+      "rawText": "The user wants to read a file named \"Harmful Algal Blooms (HABs).md\". I need to use the `list` tool to find the correct path for this file, and then use the `read` tool to read it.\n\n1.  **State Determination**: I am about to call a tool, so I am in the `acting` state. Since the tool is `list` (read-only), `NEEDS_CONFIRMATION` is `false`.\n2.  **Action**: Call `list` to find the file path.\n3.  **Next Step**: Once I have the path, I will call `read`.\n\nLet's call the `list` tool first.\n\n```tool\n{\"name\":\"list\",\"args\":{\"prefix\":\"Harmful Algal Blooms (HABs).md\"},\"retrigger\":{\"message\":\"I'll look for the file now.\"}}\n```</think>STATE: acting\nNEEDS_CONFIRMATION: false\n\n```tool\n{\"name\":\"list\",\"args\":{\"prefix\":\"Harmful Algal Blooms (HABs).md\"},\"retrigger\":{\"message\":\"Let me locate the file for you.\"}}\n```",
+      "activityLine": null
+    },
+    {
+      "role": "assistant",
+      "text": "Hmm, it seems I missed something in the setup. I need to clarify what you'd like me to do.\n\nWould you like me to:\n1. Read a specific note from your vault?\n2. List all notes in your vault?\n3. Help you with a specific task or question?\n\nI'm ready to assist once I know what you need! (◕ ◡ ◕)",
+      "header": "STATE: uncertain\nNEEDS_CONFIRMATION: false",
+      "headerExpanded": false,
+      "rawText": "STATE: uncertain\nNEEDS_CONFIRMATION: false\n\nHmm, it seems I missed something in the setup. I need to clarify what you'd like me to do.\n\nWould you like me to:\n1. Read a specific note from your vault?\n2. List all notes in your vault?\n3. Help you with a specific task or question?\n\nI'm ready to assist once I know what you need! (◕ ◡ ◕)",
+      "activityLine": null
+    },
+    {
+      "role": "user",
+      "text": "hrm",
+      "headerExpanded": false
+    },
+    {
+      "role": "assistant",
+      "text": "Hmm, I see a bit of a silence there — did you need help with something in your vault, or just testing the connection? (´･ω･`)",
+      "header": "STATE: thinking\nNEEDS_CONFIRMATION: false",
+      "headerExpanded": false,
+      "rawText": "STATE: thinking\nNEEDS_CONFIRMATION: false\n\nFINAL: Hmm, I see a bit of a silence there — did you need help with something in your vault, or just testing the connection? (´･ω･`)",
+      "activityLine": null
+    }
+  ],
+  "lastDocument": null
+}
