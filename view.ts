@@ -443,8 +443,9 @@ export class AgenticChatView extends ItemView {
         signal: this.abortController.signal,
         callbacks: {
           onTurnStart: ({ turn, history }) => {
-            // Sync local messages with agent loop history
-            this.messages = history;
+            // Don't overwrite - we share the same array reference with agent loop
+            // The agent loop mutates history directly, and this.messages IS that array
+            this.renderMessages();
           },
           onAssistantStart: () => {
             assistantText = '';

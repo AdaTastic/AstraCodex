@@ -699,35 +699,39 @@ var runAgentLoop = async ({
     }
     (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, history });
     const prompt = buildPrompt2(history);
-    (_b = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _b.call(callbacks);
+    const assistantMessage = {
+      role: "assistant",
+      text: "",
+      rawText: ""
+    };
+    history.push(assistantMessage);
+    (_b = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _b.call(callbacks, assistantMessage);
+    (_c = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _c.call(callbacks);
     let streamed = "";
     const response = await model.generateStream(
       prompt,
       (delta) => {
         var _a2;
         streamed += delta;
+        assistantMessage.text = streamed;
+        assistantMessage.rawText = streamed;
         (_a2 = callbacks == null ? void 0 : callbacks.onAssistantDelta) == null ? void 0 : _a2.call(callbacks, delta, streamed);
       },
       { signal }
     );
     lastResponse = response;
-    (_c = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _c.call(callbacks, response.header);
+    (_d = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _d.call(callbacks, response.header);
+    assistantMessage.text = response.text;
+    assistantMessage.rawText = response.text;
+    assistantMessage.header = response.header ? `STATE: ${response.header.state}` : void 0;
     const extracted = extractFencedToolCall(response.text);
-    const assistantMessage = {
-      role: "assistant",
-      text: response.text,
-      rawText: response.text,
-      header: response.header ? `STATE: ${response.header.state}` : void 0
-    };
     if (extracted && !isExtractionError(extracted)) {
       const toolCallInfo = {
         name: extracted.toolCall.name,
-        arguments: (_d = extracted.toolCall.arguments) != null ? _d : {}
+        arguments: (_e = extracted.toolCall.arguments) != null ? _e : {}
       };
       assistantMessage.toolCalls = [toolCallInfo];
     }
-    history.push(assistantMessage);
-    (_e = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _e.call(callbacks, assistantMessage);
     if (!extracted) break;
     if (isExtractionError(extracted)) {
       (_f = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _f.call(callbacks, { error: extracted.error });
@@ -769,7 +773,7 @@ var stripLeakedHeaders = (text) => {
   return text.replace(/^STATE:\s*\S+\s*/gim, "").replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, "").replace(/^FINAL:\s*/gim, "").replace(/^TOOL CALLS:\s*/gim, "").replace(/\n{3,}/g, "\n\n").trim();
 };
 var buildConversationHistory = (messages, maxChars, opts) => {
-  var _a, _b, _c, _d, _e, _f;
+  var _a, _b, _c, _d, _e, _f, _g, _h;
   if (maxChars <= 0) return "[]";
   const excludeLatestUserMessage = (_a = opts == null ? void 0 : opts.excludeLatestUserMessage) != null ? _a : false;
   const entries = [];
@@ -798,7 +802,10 @@ var buildConversationHistory = (messages, maxChars, opts) => {
         }));
       }
     } else if (msg.role === "tool") {
-      const content = ((_e = msg.text) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.toolResult) != null ? _f : "");
+      const rawContent = ((_e = msg.text) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.toolResult) != null ? _f : "");
+      const toolName = (_h = (_g = msg.toolCallId) == null ? void 0 : _g.split("-").pop()) != null ? _h : "tool";
+      const content = `[TOOL RESULT: ${toolName}]
+${rawContent}`;
       entry = {
         role: "tool",
         content,
@@ -1221,7 +1228,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
         signal: this.abortController.signal,
         callbacks: {
           onTurnStart: ({ turn, history }) => {
-            this.messages = history;
+            this.renderMessages();
           },
           onAssistantStart: () => {
             assistantText = "";

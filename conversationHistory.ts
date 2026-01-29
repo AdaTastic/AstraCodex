@@ -80,7 +80,10 @@ export const buildConversationHistory = (
         }));
       }
     } else if (msg.role === 'tool') {
-      const content = msg.text?.trim() || JSON.stringify(msg.toolResult ?? '');
+      // Make tool results very explicit so model recognizes what was already done
+      const rawContent = msg.text?.trim() || JSON.stringify(msg.toolResult ?? '');
+      const toolName = msg.toolCallId?.split('-').pop() ?? 'tool';
+      const content = `[TOOL RESULT: ${toolName}]\n${rawContent}`;
       entry = { 
         role: 'tool', 
         content,

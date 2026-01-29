@@ -59,6 +59,15 @@ export const runAgentLoop = async ({
     }
     callbacks?.onTurnStart?.({ turn, history });
     const prompt = buildPrompt(history);
+    
+    // Create assistant message slot BEFORE streaming so callbacks can update it
+    const assistantMessage: Message = {
+      role: 'assistant',
+      text: '',
+      rawText: ''
+    };
+    history.push(assistantMessage);
+    callbacks?.onMessageAdded?.(assistantMessage);
     callbacks?.onAssistantStart?.();
 
     let streamed = '';
@@ -66,6 +75,9 @@ export const runAgentLoop = async ({
       prompt,
       (delta) => {
         streamed += delta;
+        // Update the existing message in-place during streaming
+        assistantMessage.text = streamed;
+        assistantMessage.rawText = streamed;
         callbacks?.onAssistantDelta?.(delta, streamed);
       },
       { signal }
@@ -74,17 +86,14 @@ export const runAgentLoop = async ({
     lastResponse = response;
     callbacks?.onHeader?.(response.header);
 
+    // Finalize assistant message with complete response
+    assistantMessage.text = response.text;
+    assistantMessage.rawText = response.text;
+    assistantMessage.header = response.header ? `STATE: ${response.header.state}` : undefined;
+
     // Extract tool call from response
     const extracted = extractFencedToolCall(response.text);
     
-    // Create assistant message
-    const assistantMessage: Message = {
-      role: 'assistant',
-      text: response.text,
-      rawText: response.text,
-      header: response.header ? `STATE: ${response.header.state}` : undefined
-    };
-
     // If tool call found, add it to message
     if (extracted && !isExtractionError(extracted)) {
       const toolCallInfo: ToolCallInfo = {
@@ -93,10 +102,6 @@ export const runAgentLoop = async ({
       };
       assistantMessage.toolCalls = [toolCallInfo];
     }
-
-    // Add assistant message to history
-    history.push(assistantMessage);
-    callbacks?.onMessageAdded?.(assistantMessage);
 
     // No tool call - done
     if (!extracted) break;
