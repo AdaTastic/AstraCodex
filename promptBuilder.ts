@@ -27,15 +27,8 @@ Everything OUTSIDE <think> tags is shown directly to the user.
 IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
 
 TOOL CALLS:
-- To use a tool, output EXACTLY ONE fenced tool block:
-
-\`\`\`tool
-{"name":"read","args":{"path":"..."}}
-\`\`\`
-
-CRITICAL RULES:
+See AstraCodex/Rules/tool_protocol.md for supported formats.
 - Output AT MOST ONE tool block per response
-- Do NOT repeat the tool block anywhere in your response
 - Do NOT include tool blocks inside <think> tags
 - If you output multiple tool blocks, only the last one will be executed
 

@@ -6,6 +6,18 @@ const stripThinkBlocks = (text: string): string => {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 };
 
+const stripLeakedHeaders = (text: string): string => {
+  // Remove legacy header lines that may have leaked into old chat history.
+  // This prevents the model from mimicking header patterns it sees in context.
+  return text
+    .replace(/^STATE:\s*\S+\s*/gim, '')
+    .replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, '')
+    .replace(/^FINAL:\s*/gim, '')
+    .replace(/^TOOL CALLS:\s*/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 export const buildConversationHistory = (
   messages: Message[],
   maxChars: number,
@@ -38,7 +50,7 @@ export const buildConversationHistory = (
     // IMPORTANT: history should not include msg.think or rawText.
     // We only include the user-facing msg.text, but we still strip tool blocks and any leaked <think> blocks.
     const base = stripToolBlocks(msg.text ?? '').trim();
-    let text = stripThinkBlocks(base);
+    let text = stripLeakedHeaders(stripThinkBlocks(base));
     
     // Fall back to activityLine when text is empty (e.g., tool-only messages).
     // This ensures the model "remembers" what actions it took.

@@ -2,11 +2,19 @@
 
 ## Tool calls
 
-The assistant may request tools **only** using a fenced tool block:
+The assistant may request tools using **either** of these formats:
 
+### Format 1: Fenced Markdown (preferred)
 ```tool
 {"name":"list","args":{"prefix":""},"retrigger":{"message":"..."}}
 ```
+
+### Format 2: XML-style (alternative)
+```
+<tool_call>{"name":"read","args":{"path":"..."}}</tool_call>
+```
+
+Both formats are equivalent. Use whichever is natural for your model.
 
 ### Schema
 - `name` (string): tool name.

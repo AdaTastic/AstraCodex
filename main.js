@@ -103,15 +103,8 @@ Everything OUTSIDE <think> tags is shown directly to the user.
 IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
 
 TOOL CALLS:
-- To use a tool, output EXACTLY ONE fenced tool block:
-
-\`\`\`tool
-{"name":"read","args":{"path":"..."}}
-\`\`\`
-
-CRITICAL RULES:
+See AstraCodex/Rules/tool_protocol.md for supported formats.
 - Output AT MOST ONE tool block per response
-- Do NOT repeat the tool block anywhere in your response
 - Do NOT include tool blocks inside <think> tags
 - If you output multiple tool blocks, only the last one will be executed
 
@@ -606,15 +599,7 @@ var deriveChatTitle = (firstUserMessage, maxLen = 40) => {
 var isExtractionError = (result) => {
   return result !== null && "error" in result;
 };
-var extractFencedToolCall = (text) => {
-  const allMatches = text.match(/```tool\s*[\s\S]*?```/g);
-  if (!allMatches || allMatches.length === 0) {
-    return null;
-  }
-  const lastBlock = allMatches[allMatches.length - 1];
-  const jsonMatch = lastBlock.match(/```tool\s*([\s\S]*?)```/);
-  if (!jsonMatch) return null;
-  const rawJson = jsonMatch[1].trim();
+var parseToolJson = (rawJson) => {
   try {
     const parsed = JSON.parse(rawJson);
     if (!(parsed == null ? void 0 : parsed.name) || typeof parsed.name !== "string") return null;
@@ -626,11 +611,39 @@ var extractFencedToolCall = (text) => {
         args,
         retrigger
       },
-      rawBlock: lastBlock
+      rawBlock: rawJson
     };
   } catch (e) {
     return null;
   }
+};
+var extractFencedToolCall = (text) => {
+  const allBlocks = [];
+  const fencedMatches = text.matchAll(/```tool\s*([\s\S]*?)```/g);
+  for (const match of fencedMatches) {
+    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
+  }
+  const xmlMatches = text.matchAll(/<tool_call>(?:tool\s*)?([\s\S]*?)<\/tool_call>/gi);
+  for (const match of xmlMatches) {
+    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
+  }
+  const unclosedMatches = text.matchAll(/<tool_call>(?:tool\s*)?(\{[\s\S]*?\})(?=\s|$|<)/gi);
+  for (const match of unclosedMatches) {
+    const json = match[1].trim();
+    if (!allBlocks.some((b) => b.json === json)) {
+      allBlocks.push({ rawBlock: match[0], json });
+    }
+  }
+  if (allBlocks.length === 0) {
+    return null;
+  }
+  const lastBlock = allBlocks[allBlocks.length - 1];
+  const result = parseToolJson(lastBlock.json);
+  if (result) {
+    result.rawBlock = lastBlock.rawBlock;
+    return result;
+  }
+  return null;
 };
 var formatToolActivity = (call) => {
   var _a;
@@ -651,8 +664,10 @@ var formatToolActivity = (call) => {
   return `tool: ${n}`;
 };
 var stripToolBlocks = (text) => {
-  const withoutBlocks = text.replace(/```tool\s*[\s\S]*?```/g, "");
-  const normalized = withoutBlocks.replace(/\n{3,}/g, "\n\n");
+  let result = text.replace(/```tool\s*[\s\S]*?```/g, "");
+  result = result.replace(/<tool_call>(?:tool\s*)?[\s\S]*?<\/tool_call>/gi, "");
+  result = result.replace(/<tool_call>(?:tool\s*)?\{[\s\S]*?\}(?=\s|$|<)/gi, "");
+  const normalized = result.replace(/\n{3,}/g, "\n\n");
   return normalized.trim();
 };
 var executeToolCall = async (runner, call) => {
@@ -732,6 +747,9 @@ ${toolResultText}`;
 var stripThinkBlocks = (text) => {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 };
+var stripLeakedHeaders = (text) => {
+  return text.replace(/^STATE:\s*\S+\s*/gim, "").replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, "").replace(/^FINAL:\s*/gim, "").replace(/^TOOL CALLS:\s*/gim, "").replace(/\n{3,}/g, "\n\n").trim();
+};
 var buildConversationHistory = (messages, maxChars, opts) => {
   var _a, _b, _c;
   if (maxChars <= 0) return "";
@@ -748,7 +766,7 @@ var buildConversationHistory = (messages, maxChars, opts) => {
     if (msg.role !== "user" && msg.role !== "assistant") continue;
     const prefix = msg.role === "user" ? "User: " : "Assistant: ";
     const base = stripToolBlocks((_c = msg.text) != null ? _c : "").trim();
-    let text = stripThinkBlocks(base);
+    let text = stripLeakedHeaders(stripThinkBlocks(base));
     if (!text && msg.activityLine) {
       text = `[${msg.activityLine}]`;
     }

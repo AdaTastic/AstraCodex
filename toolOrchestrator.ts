@@ -25,31 +25,10 @@ export const isExtractionError = (result: ExtractionResult | null): result is Ex
 };
 
 /**
- * Extracts a fenced tool block from model output.
- * When multiple tool blocks exist, uses the LAST one (models often output
- * "planning" blocks in think, then the real one after).
- *
- * Only triggers on:
- *
- * ```tool
- * {"name":"read","args":{...},"retrigger":{"message":"..."}}
- * ```
+ * Parses JSON from a raw tool block string.
+ * Returns null if parsing fails or the result is invalid.
  */
-export const extractFencedToolCall = (text: string): ExtractionResult | null => {
-  // Find all tool blocks
-  const allMatches = text.match(/```tool\s*[\s\S]*?```/g);
-  
-  if (!allMatches || allMatches.length === 0) {
-    return null;
-  }
-  
-  // Use the LAST tool block (models often output planning blocks in think, 
-  // then the real one after)
-  const lastBlock = allMatches[allMatches.length - 1];
-  const jsonMatch = lastBlock.match(/```tool\s*([\s\S]*?)```/);
-  if (!jsonMatch) return null;
-
-  const rawJson = jsonMatch[1].trim();
+const parseToolJson = (rawJson: string): ExtractedToolCall | null => {
   try {
     const parsed = JSON.parse(rawJson) as ToolCall;
     if (!parsed?.name || typeof parsed.name !== 'string') return null;
@@ -65,11 +44,74 @@ export const extractFencedToolCall = (text: string): ExtractionResult | null => 
         args,
         retrigger
       },
-      rawBlock: lastBlock
+      rawBlock: rawJson
     };
   } catch {
     return null;
   }
+};
+
+/**
+ * Extracts a tool block from model output.
+ * Supports two formats:
+ *
+ * 1. Fenced markdown (preferred):
+ * ```tool
+ * {"name":"read","args":{...}}
+ * ```
+ *
+ * 2. XML-style (GLM models):
+ * <tool_call>{"name":"read","args":{...}}</tool_call>
+ * or
+ * <tool_call>tool
+ * {"name":"read","args":{...}}
+ * </tool_call>
+ *
+ * When multiple tool blocks exist, uses the LAST one.
+ */
+export const extractFencedToolCall = (text: string): ExtractionResult | null => {
+  // Collect all tool blocks from both formats
+  const allBlocks: { rawBlock: string; json: string }[] = [];
+
+  // 1. Find fenced tool blocks: ```tool {...}```
+  const fencedMatches = text.matchAll(/```tool\s*([\s\S]*?)```/g);
+  for (const match of fencedMatches) {
+    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
+  }
+
+  // 2. Find XML tool blocks: <tool_call>...</tool_call>
+  // Handle both <tool_call>{json}</tool_call> and <tool_call>tool\n{json}</tool_call>
+  const xmlMatches = text.matchAll(/<tool_call>(?:tool\s*)?([\s\S]*?)<\/tool_call>/gi);
+  for (const match of xmlMatches) {
+    allBlocks.push({ rawBlock: match[0], json: match[1].trim() });
+  }
+
+  // 3. Handle unclosed XML: <tool_call>{json} or <tool_call>tool\n{json}
+  // Some models don't close the tag properly
+  const unclosedMatches = text.matchAll(/<tool_call>(?:tool\s*)?(\{[\s\S]*?\})(?=\s|$|<)/gi);
+  for (const match of unclosedMatches) {
+    // Only add if not already captured by closed XML
+    const json = match[1].trim();
+    if (!allBlocks.some(b => b.json === json)) {
+      allBlocks.push({ rawBlock: match[0], json });
+    }
+  }
+
+  if (allBlocks.length === 0) {
+    return null;
+  }
+
+  // Use the LAST tool block (models often output planning blocks early, 
+  // then the real one after)
+  const lastBlock = allBlocks[allBlocks.length - 1];
+  const result = parseToolJson(lastBlock.json);
+  
+  if (result) {
+    result.rawBlock = lastBlock.rawBlock;
+    return result;
+  }
+
+  return null;
 };
 
 export type ToolExecutionResult = {
@@ -97,8 +139,16 @@ export const formatToolActivity = (call: ToolCall): string => {
 };
 
 export const stripToolBlocks = (text: string): string => {
-  const withoutBlocks = text.replace(/```tool\s*[\s\S]*?```/g, '');
-  const normalized = withoutBlocks.replace(/\n{3,}/g, '\n\n');
+  // Strip fenced tool blocks: ```tool {...}```
+  let result = text.replace(/```tool\s*[\s\S]*?```/g, '');
+  
+  // Strip XML tool blocks: <tool_call>...</tool_call>
+  result = result.replace(/<tool_call>(?:tool\s*)?[\s\S]*?<\/tool_call>/gi, '');
+  
+  // Strip unclosed XML tool blocks: <tool_call>{...}
+  result = result.replace(/<tool_call>(?:tool\s*)?\{[\s\S]*?\}(?=\s|$|<)/gi, '');
+  
+  const normalized = result.replace(/\n{3,}/g, '\n\n');
   return normalized.trim();
 };
 

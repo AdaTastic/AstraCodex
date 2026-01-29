@@ -138,9 +138,10 @@ export const deriveState = (context: {
 /**
  * Parses raw model output into segments for agentic display.
  * Splits text at tool block boundaries.
+ * Supports both fenced (```tool) and XML (<tool_call>) formats.
  * 
  * Example input:
- *   "I'll search for that. ```tool {...}``` Found it! ```tool {...}``` Here's what I see."
+ *   "I'll search for that. ```tool {...}``` Found it! <tool_call>{...}</tool_call> Here's what I see."
  * 
  * Returns:
  *   [
@@ -153,7 +154,10 @@ export const deriveState = (context: {
  */
 export const parseMessageSegments = (rawText: string): MessageSegment[] => {
   const segments: MessageSegment[] = [];
-  const toolBlockRegex = /```tool\s*([\s\S]*?)```/g;
+  
+  // Combined regex for both fenced and XML formats
+  // Group 1: fenced JSON, Group 2: XML JSON
+  const toolBlockRegex = /```tool\s*([\s\S]*?)```|<tool_call>(?:tool\s*)?([\s\S]*?)<\/tool_call>/gi;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -169,20 +173,22 @@ export const parseMessageSegments = (rawText: string): MessageSegment[] => {
       }
     }
 
-    // Parse the tool block
-    try {
-      const toolJson = match[1].trim();
-      const parsed = JSON.parse(toolJson) as ToolCall;
-      if (parsed?.name) {
-        const activity = formatToolActivity(parsed);
-        segments.push({
-          type: 'tool',
-          activity,
-          toolName: parsed.name
-        });
+    // Parse the tool block (check both capture groups)
+    const toolJson = (match[1] ?? match[2])?.trim();
+    if (toolJson) {
+      try {
+        const parsed = JSON.parse(toolJson) as ToolCall;
+        if (parsed?.name) {
+          const activity = formatToolActivity(parsed);
+          segments.push({
+            type: 'tool',
+            activity,
+            toolName: parsed.name
+          });
+        }
+      } catch {
+        // Invalid JSON - skip this tool block
       }
-    } catch {
-      // Invalid JSON - skip this tool block
     }
 
     lastIndex = match.index + match[0].length;
@@ -202,7 +208,7 @@ export const parseMessageSegments = (rawText: string): MessageSegment[] => {
 
 /**
  * Cleans up text for display in a segment.
- * Removes leaked headers, think blocks, and normalizes whitespace.
+ * Removes leaked headers, think blocks, tool blocks, and normalizes whitespace.
  */
 const cleanSegmentText = (text: string): string => {
   let cleaned = text;
@@ -210,6 +216,11 @@ const cleanSegmentText = (text: string): string => {
   // Remove think blocks (including malformed ones without opening tag)
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
   cleaned = cleaned.replace(/^[\s\S]*?<\/think>/i, ''); // Malformed: only closing tag
+
+  // Remove any stray tool_call tags that weren't matched
+  cleaned = cleaned.replace(/<tool_call>(?:tool\s*)?[\s\S]*?<\/tool_call>/gi, '');
+  cleaned = cleaned.replace(/<tool_call>(?:tool\s*)?\{[\s\S]*?\}(?=\s|$|<)/gi, '');
+  cleaned = cleaned.replace(/<\/?tool_call>/gi, ''); // Stray opening/closing tags
 
   // Remove leaked header lines (STATE:, NEEDS_CONFIRMATION:, FINAL:)
   cleaned = cleaned.replace(/^STATE:\s*\S+\s*/gim, '');
