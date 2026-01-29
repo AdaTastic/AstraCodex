@@ -113,7 +113,7 @@ describe('PromptBuilder', () => {
   it('includes last document context when provided', () => {
     const prompt = buildPrompt({
       userMessage: 'Summarize it',
-      settings: { ...settings, maxContextChars: 1000 },
+      settings: { ...settings, maxContextChars: 2000 },
       coreRules,
       lastDocument: { path: 'Harmful Algal Blooms (HABs).md', content: 'DOC CONTENT HERE' }
     });

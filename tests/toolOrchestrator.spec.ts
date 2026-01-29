@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeToolCall, extractFencedToolCall, formatToolActivity, stripToolBlocks } from '../toolOrchestrator';
+import { executeToolCall, extractFencedToolCall, formatToolActivity, stripToolBlocks, isExtractionError } from '../toolOrchestrator';
 
 describe('toolOrchestrator', () => {
   it('extracts a fenced tool block with retrigger', () => {
     const text = `Hello\n\n\`\`\`tool\n{"name":"read","args":{"path":"note.md"},"retrigger":{"message":"Summarize"}}\n\`\`\`\n`;
     const extracted = extractFencedToolCall(text);
 
-    expect(extracted?.toolCall.name).toBe('read');
-    expect(extracted?.toolCall.args).toEqual({ path: 'note.md' });
-    expect(extracted?.toolCall.retrigger?.message).toBe('Summarize');
+    expect(isExtractionError(extracted)).toBe(false);
+    if (!isExtractionError(extracted) && extracted) {
+      expect(extracted.toolCall.name).toBe('read');
+      expect(extracted.toolCall.args).toEqual({ path: 'note.md' });
+      expect(extracted.toolCall.retrigger?.message).toBe('Summarize');
+    }
   });
 
   it('does not extract when block is not fenced as tool', () => {
@@ -41,5 +44,26 @@ describe('toolOrchestrator', () => {
   it('strips tool blocks from assistant text', () => {
     const text = `Hello\n\n\`\`\`tool\n{"name":"list","args":{"prefix":""}}\n\`\`\`\n\nWorld`;
     expect(stripToolBlocks(text)).toBe('Hello\n\nWorld');
+  });
+
+  it('returns error when multiple tool blocks are detected', () => {
+    const text = `STATE: acting\n\n\`\`\`tool\n{"name":"list","args":{}}\n\`\`\`\n\nFINAL: Here\n\n\`\`\`tool\n{"name":"list","args":{}}\n\`\`\``;
+    const extracted = extractFencedToolCall(text);
+
+    expect(isExtractionError(extracted)).toBe(true);
+    if (isExtractionError(extracted)) {
+      expect(extracted.blockCount).toBe(2);
+      expect(extracted.error).toContain('Multiple tool blocks');
+    }
+  });
+
+  it('returns error when duplicate tool blocks in think tags', () => {
+    const text = `<think>\`\`\`tool\n{"name":"read","args":{"path":"a.md"}}\n\`\`\`</think>\`\`\`tool\n{"name":"read","args":{"path":"a.md"}}\n\`\`\``;
+    const extracted = extractFencedToolCall(text);
+
+    expect(isExtractionError(extracted)).toBe(true);
+    if (isExtractionError(extracted)) {
+      expect(extracted.blockCount).toBe(2);
+    }
   });
 });

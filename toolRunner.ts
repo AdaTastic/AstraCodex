@@ -23,7 +23,7 @@ type PendingEdit = {
 
 export class ToolRunner {
   private adapter: ToolRunnerAdapter;
-  private canAct: () => boolean;
+  private canActCallback: () => boolean;
   private now: () => string;
   private registry?: ToolRegistry;
   private getActiveFilePath?: () => string | null;
@@ -32,14 +32,14 @@ export class ToolRunner {
 
   constructor(
     adapter: ToolRunnerAdapter,
-    canAct: () => boolean,
+    canActCallback: () => boolean,
     now: () => string = () => new Date().toISOString(),
     registry?: ToolRegistry,
     onToolActivity?: (message: string) => void,
     getActiveFilePath?: () => string | null
   ) {
     this.adapter = adapter;
-    this.canAct = canAct;
+    this.canActCallback = canActCallback;
     this.now = now;
     this.registry = registry;
     this.onToolActivity = onToolActivity;
@@ -76,7 +76,7 @@ export class ToolRunner {
   }
 
   canAct(): boolean {
-    return this.canAct();
+    return this.canActCallback();
   }
 
   async executeTool(name: string, args: Record<string, unknown>) {
@@ -120,7 +120,7 @@ export class ToolRunner {
   }
 
   private ensureCanAct() {
-    if (!this.canAct()) {
+    if (!this.canActCallback()) {
       throw new Error('Confirmation required to perform write operations.');
     }
   }

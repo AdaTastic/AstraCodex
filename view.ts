@@ -11,8 +11,12 @@ import { ChatStore, ChatMeta, ChatRecord } from './chatStore';
 import { mergeChatSettings, restoreChatState } from './chatSession';
 import { deriveChatTitle } from './chatTitle';
 import { runAgentLoop } from './agentLoop';
-import { extractFencedToolCall, formatToolActivity, stripToolBlocks } from './toolOrchestrator';
+import { extractFencedToolCall, formatToolActivity, stripToolBlocks, isExtractionError } from './toolOrchestrator';
 import { buildConversationHistory } from './conversationHistory';
+// Extracted modules
+import { extractThink, extractHeaderAndBody, extractFinal, extractRetriggerMessage, extractLastReadPath, parseStateFromHeader } from './textParser';
+import { renderMessages as renderMessagesUtil, updateLastAssistantMessage as updateLastAssistantMessageUtil, pushMessage as pushMessageUtil } from './messageRenderer';
+import * as ChatManager from './chatManager';
 
 export const VIEW_TYPE_AGENTIC_CHAT = 'agentic-chat-view';
 const LOADING_TIMEOUT_MS = 20000;
@@ -382,7 +386,7 @@ export class AgenticChatView extends ItemView {
 
       // Hide any tool blocks from the visible transcript.
       const extracted = extractFencedToolCall(text);
-      this.activityLine = extracted ? formatToolActivity(extracted.toolCall) : null;
+      this.activityLine = (extracted && !isExtractionError(extracted)) ? formatToolActivity(extracted.toolCall) : null;
       last.activityLine = this.activityLine;
 
       const withoutToolBlocks = stripToolBlocks(text);

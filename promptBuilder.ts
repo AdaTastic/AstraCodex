@@ -22,11 +22,18 @@ STATE: <state>
 NEEDS_CONFIRMATION: <true|false>
 
 TOOL CALLS:
-- If you need to use a tool, you MUST output exactly one fenced tool block in this exact format:
+- If you need to use a tool, you MUST output EXACTLY ONE fenced tool block in this exact format:
 
 \`\`\`tool
 {"name":"read","args":{"path":"..."},"retrigger":{"message":"..."}}
 \`\`\`
+
+CRITICAL RULES FOR TOOL BLOCKS:
+- Output AT MOST ONE tool block per response
+- Do NOT repeat the tool block anywhere in your response
+- Do NOT include tool blocks inside <think> tags
+- Do NOT include tool blocks after FINAL:
+- If you output multiple tool blocks, your response will be rejected
 
 - Do NOT describe tool calls in plain text (e.g. do NOT write \`reading: [current file]\`).
 - If you are not calling a tool, do not output any tool block.

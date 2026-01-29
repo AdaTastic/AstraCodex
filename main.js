@@ -97,11 +97,18 @@ STATE: <state>
 NEEDS_CONFIRMATION: <true|false>
 
 TOOL CALLS:
-- If you need to use a tool, you MUST output exactly one fenced tool block in this exact format:
+- If you need to use a tool, you MUST output EXACTLY ONE fenced tool block in this exact format:
 
 \`\`\`tool
 {"name":"read","args":{"path":"..."},"retrigger":{"message":"..."}}
 \`\`\`
+
+CRITICAL RULES FOR TOOL BLOCKS:
+- Output AT MOST ONE tool block per response
+- Do NOT repeat the tool block anywhere in your response
+- Do NOT include tool blocks inside <think> tags
+- Do NOT include tool blocks after FINAL:
+- If you output multiple tool blocks, your response will be rejected
 
 - Do NOT describe tool calls in plain text (e.g. do NOT write \`reading: [current file]\`).
 - If you are not calling a tool, do not output any tool block.
@@ -263,12 +270,17 @@ var ModelClient = class {
     this.fetchImpl = baseFetch ? baseFetch.bind(globalThis) : fetch;
   }
   async generateStream(prompt, onDelta, opts) {
-    const contextLength = this.settings.contextSliderValue * 10;
+    const numCtx = Math.round(2048 + this.settings.contextSliderValue / 100 * 30720);
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.settings.model, prompt, stream: true }),
+      body: JSON.stringify({
+        model: this.settings.model,
+        prompt,
+        stream: true,
+        options: { num_ctx: numCtx }
+      }),
       signal: opts == null ? void 0 : opts.signal
     });
     if (!response.ok || !response.body) {
@@ -328,10 +340,10 @@ var parseHeader = (text) => {
 
 // toolRunner.ts
 var ToolRunner = class {
-  constructor(adapter, canAct, now = () => (/* @__PURE__ */ new Date()).toISOString(), registry, onToolActivity, getActiveFilePath) {
+  constructor(adapter, canActCallback, now = () => (/* @__PURE__ */ new Date()).toISOString(), registry, onToolActivity, getActiveFilePath) {
     this.pendingEdit = null;
     this.adapter = adapter;
-    this.canAct = canAct;
+    this.canActCallback = canActCallback;
     this.now = now;
     this.registry = registry;
     this.onToolActivity = onToolActivity;
@@ -363,7 +375,7 @@ var ToolRunner = class {
     await this.adapter.append("AstraCodex/Memory.md", entry);
   }
   canAct() {
-    return this.canAct();
+    return this.canActCallback();
   }
   async executeTool(name, args) {
     var _a;
@@ -402,7 +414,7 @@ var ToolRunner = class {
     this.clearPendingEdit();
   }
   ensureCanAct() {
-    if (!this.canAct()) {
+    if (!this.canActCallback()) {
       throw new Error("Confirmation required to perform write operations.");
     }
   }
@@ -559,7 +571,20 @@ var deriveChatTitle = (firstUserMessage, maxLen = 40) => {
 };
 
 // toolOrchestrator.ts
+var isExtractionError = (result) => {
+  return result !== null && "error" in result;
+};
 var extractFencedToolCall = (text) => {
+  const allMatches = text.match(/```tool\s*[\s\S]*?```/g);
+  if (!allMatches || allMatches.length === 0) {
+    return null;
+  }
+  if (allMatches.length > 1) {
+    return {
+      error: `Multiple tool blocks detected (${allMatches.length}). You must output exactly ONE tool block per response. Do not repeat tool calls.`,
+      blockCount: allMatches.length
+    };
+  }
   const match = text.match(/```tool\s*([\s\S]*?)```/);
   if (!match) return null;
   const rawJson = match[1].trim();
@@ -623,7 +648,7 @@ var runAgentLoop = async ({
   callbacks,
   signal
 }) => {
-  var _a, _b, _c, _d, _e;
+  var _a, _b, _c, _d, _e, _f;
   let userMessage = initialUserMessage;
   let lastResponse = null;
   for (let turn = 0; turn < maxTurns; turn += 1) {
@@ -647,16 +672,23 @@ var runAgentLoop = async ({
     (_c = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _c.call(callbacks, response.header);
     const extracted = extractFencedToolCall(response.text);
     if (!extracted) break;
+    if (isExtractionError(extracted)) {
+      (_d = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _d.call(callbacks, { error: extracted.error });
+      userMessage = `ERROR: ${extracted.error}
+
+Please try again with exactly ONE tool block.`;
+      continue;
+    }
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
-    (_d = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _d.call(callbacks, { name: executed.name, result: executed.result });
+    (_e = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _e.call(callbacks, { name: executed.name, result: executed.result });
     if (!executed.retriggerMessage) break;
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    (_e = callbacks == null ? void 0 : callbacks.onRetrigger) == null ? void 0 : _e.call(callbacks, { message: executed.retriggerMessage });
+    (_f = callbacks == null ? void 0 : callbacks.onRetrigger) == null ? void 0 : _f.call(callbacks, { message: executed.retriggerMessage });
     const toolResultText = typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2);
     userMessage = `${executed.retriggerMessage}
 
@@ -1007,7 +1039,7 @@ ${pending.preview.after}`);
     if (last && last.role === "assistant") {
       last.rawText = text;
       const extracted = extractFencedToolCall(text);
-      this.activityLine = extracted ? formatToolActivity(extracted.toolCall) : null;
+      this.activityLine = extracted && !isExtractionError(extracted) ? formatToolActivity(extracted.toolCall) : null;
       last.activityLine = this.activityLine;
       const withoutToolBlocks = stripToolBlocks(text);
       const { think, rest } = this.extractThink(withoutToolBlocks);
@@ -1398,8 +1430,9 @@ var AstraCodexPlugin = class extends import_obsidian2.Plugin {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_AGENTIC_CHAT).first();
     if (!leaf) {
-      leaf = workspace.getRightLeaf(false);
-      if (!leaf) return;
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (!rightLeaf) return;
+      leaf = rightLeaf;
       await leaf.setViewState({ type: VIEW_TYPE_AGENTIC_CHAT, active: true });
     }
     workspace.revealLeaf(leaf);
@@ -1456,6 +1489,12 @@ var AstraCodexSettingTab = class extends import_obsidian2.PluginSettingTab {
     new import_obsidian2.Setting(containerEl).setName("Include active note by default").setDesc("Sets the default toggle state for active note context.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.includeActiveNote).onChange(async (value) => {
         this.plugin.settings.includeActiveNote = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Context window size").setDesc("Controls how much context the model can use (2K-32K tokens).").addSlider(
+      (slider) => slider.setLimits(0, 100, 1).setValue(this.plugin.settings.contextSliderValue).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.contextSliderValue = value;
         await this.plugin.saveSettings();
       })
     );

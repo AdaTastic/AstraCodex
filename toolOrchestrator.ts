@@ -13,15 +13,42 @@ export type ExtractedToolCall = {
   rawBlock: string;
 };
 
+export type ExtractionError = {
+  error: string;
+  blockCount: number;
+};
+
+export type ExtractionResult = ExtractedToolCall | ExtractionError;
+
+export const isExtractionError = (result: ExtractionResult | null): result is ExtractionError => {
+  return result !== null && 'error' in result;
+};
+
 /**
  * Extracts a single fenced tool block from model output.
+ * Returns an error if multiple tool blocks are detected.
+ *
  * Only triggers on:
  *
  * ```tool
  * {"name":"read","args":{...},"retrigger":{"message":"..."}}
  * ```
  */
-export const extractFencedToolCall = (text: string): ExtractedToolCall | null => {
+export const extractFencedToolCall = (text: string): ExtractionResult | null => {
+  // Count all tool blocks to detect duplicates
+  const allMatches = text.match(/```tool\s*[\s\S]*?```/g);
+  
+  if (!allMatches || allMatches.length === 0) {
+    return null;
+  }
+  
+  if (allMatches.length > 1) {
+    return {
+      error: `Multiple tool blocks detected (${allMatches.length}). You must output exactly ONE tool block per response. Do not repeat tool calls.`,
+      blockCount: allMatches.length
+    };
+  }
+
   const match = text.match(/```tool\s*([\s\S]*?)```/);
   if (!match) return null;
 

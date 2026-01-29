@@ -32,11 +32,12 @@ export default class AstraCodexPlugin extends Plugin {
 
   private async activateView() {
     const { workspace } = this.app;
-    let leaf = workspace.getLeavesOfType(VIEW_TYPE_AGENTIC_CHAT).first();
+    let leaf: WorkspaceLeaf | undefined = workspace.getLeavesOfType(VIEW_TYPE_AGENTIC_CHAT).first();
 
     if (!leaf) {
-      leaf = workspace.getRightLeaf(false);
-      if (!leaf) return;
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (!rightLeaf) return;
+      leaf = rightLeaf;
       await leaf.setViewState({ type: VIEW_TYPE_AGENTIC_CHAT, active: true });
     }
 
@@ -137,6 +138,20 @@ class AstraCodexSettingTab extends PluginSettingTab {
           this.plugin.settings.includeActiveNote = value;
           await this.plugin.saveSettings();
         })
+      );
+
+    new Setting(containerEl)
+      .setName('Context window size')
+      .setDesc('Controls how much context the model can use (2K-32K tokens).')
+      .addSlider((slider) =>
+        slider
+          .setLimits(0, 100, 1)
+          .setValue(this.plugin.settings.contextSliderValue)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.contextSliderValue = value;
+            await this.plugin.saveSettings();
+          })
       );
   }
 }

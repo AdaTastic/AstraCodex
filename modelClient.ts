@@ -1,9 +1,7 @@
 import type { AstraCodexSettings } from './settings';
+import type { ParsedHeader } from './types';
 
-export interface ParsedHeader {
-  state: string;
-  needsConfirmation: boolean;
-}
+export type { ParsedHeader };
 
 export interface ModelResponse {
   header: ParsedHeader;
@@ -27,12 +25,18 @@ export class ModelClient {
       signal?: AbortSignal;
     }
   ): Promise<ModelResponse> {
-    const contextLength = this.settings.contextSliderValue * 10; // Convert slider value to a meaningful length
+    // Convert slider (0-100) to context tokens (2048-32768)
+    const numCtx = Math.round(2048 + (this.settings.contextSliderValue / 100) * 30720);
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: this.settings.model, prompt, stream: true }),
+      body: JSON.stringify({
+        model: this.settings.model,
+        prompt,
+        stream: true,
+        options: { num_ctx: numCtx }
+      }),
       signal: opts?.signal
     });
 

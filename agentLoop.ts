@@ -1,6 +1,6 @@
 import type { ModelResponse } from './modelClient';
 import type { ToolRunner } from './toolRunner';
-import { executeToolCall, extractFencedToolCall } from './toolOrchestrator';
+import { executeToolCall, extractFencedToolCall, isExtractionError } from './toolOrchestrator';
 
 export type AgentLoopModel = {
   generateStream: (
@@ -18,6 +18,8 @@ export type AgentLoopCallbacks = {
   onToolResult?: (payload: { name: string; result: unknown }) => void;
   /** Called after tool execution if a retrigger will occur. */
   onRetrigger?: (payload: { message: string }) => void;
+  /** Called when the model outputs multiple tool blocks (error). */
+  onToolError?: (payload: { error: string }) => void;
 };
 
 export type RunAgentLoopArgs = {
@@ -70,6 +72,14 @@ export const runAgentLoop = async ({
 
     const extracted = extractFencedToolCall(response.text);
     if (!extracted) break;
+
+    // Handle extraction errors (e.g., multiple tool blocks)
+    if (isExtractionError(extracted)) {
+      callbacks?.onToolError?.({ error: extracted.error });
+      // Auto-retry by feeding the error back to the model
+      userMessage = `ERROR: ${extracted.error}\n\nPlease try again with exactly ONE tool block.`;
+      continue;
+    }
 
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
