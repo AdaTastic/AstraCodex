@@ -2,7 +2,7 @@
   "baseUrl": "http://127.0.0.1:11434",
   "model": "glm47-tools-16k",
   "includeActiveNote": false,
-  "maxContextChars": 91000,
+  "maxContextChars": 120000,
   "maxMemoryChars": 10000,
   "contextSliderValue": 100
 }
