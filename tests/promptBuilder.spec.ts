@@ -122,6 +122,24 @@ describe('PromptBuilder', () => {
     expect(prompt).toContain('DOC CONTENT HERE');
   });
 
+  it('preserves lastDocument over history when context is truncated', () => {
+    // Bug: lastDocument was placed AFTER history in context, so it got truncated first.
+    // Fix: lastDocument should have HIGHER priority than history.
+    const longHistory = 'User: First message\nAssistant: Reply 1\n'.repeat(50);
+    const prompt = buildPrompt({
+      userMessage: 'Summarize the HAB document',
+      settings: { ...settings, maxContextChars: 1500 },
+      coreRules,
+      history: longHistory,
+      lastDocument: { path: 'HABs.md', content: 'IMPORTANT_DOCUMENT_CONTENT' }
+    });
+
+    // lastDocument should survive truncation
+    expect(prompt).toContain('IMPORTANT_DOCUMENT_CONTENT');
+    // History may be partially truncated, but lastDocument must be there
+    expect(prompt).toContain('Last Document Context (HABs.md):');
+  });
+
   it('preserves the latest user request when context is truncated', () => {
     const prompt = buildPrompt({
       userMessage: 'LATEST QUESTION',

@@ -140,18 +140,6 @@ class AstraCodexSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName('Context window size')
-      .setDesc('Controls how much context the model can use (2K-32K tokens).')
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 100, 1)
-          .setValue(this.plugin.settings.contextSliderValue)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.contextSliderValue = value;
-            await this.plugin.saveSettings();
-          })
-      );
+    // Removed unused contextSliderValue slider - maxContextChars slider above controls context limit
   }
 }

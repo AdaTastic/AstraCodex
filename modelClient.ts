@@ -25,8 +25,9 @@ export class ModelClient {
       signal?: AbortSignal;
     }
   ): Promise<ModelResponse> {
-    // Convert slider (0-100) to context tokens (2048-32768)
-    const numCtx = Math.round(2048 + (this.settings.contextSliderValue / 100) * 30720);
+    // Use maxContextChars to estimate context tokens (1 char ≈ 0.25 tokens for English)
+    // Default to 32K tokens if not set
+    const numCtx = Math.min(32768, Math.round(this.settings.maxContextChars * 0.25));
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: 'POST',

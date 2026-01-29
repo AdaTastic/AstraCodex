@@ -7,7 +7,7 @@ describe('settings defaults', () => {
     expect(defaults.baseUrl).toBe('http://127.0.0.1:11434');
     expect(defaults.model).toBe('qwen2.5:32b-instruct');
     expect(defaults.includeActiveNote).toBe(false);
-    expect(defaults.maxContextChars).toBe(8000);
+    expect(defaults.maxContextChars).toBe(32000);
     expect(defaults.maxMemoryChars).toBe(2000);
   });
 

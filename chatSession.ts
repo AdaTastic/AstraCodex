@@ -10,33 +10,30 @@ export type ChatStateSnapshot = {
   lastDocument?: { path: string; content: string } | null;
 };
 
-// Global model/baseUrl should not be overridden by per-chat settings.
-// Chats may override other UI limits/preferences.
+// Global model/baseUrl/maxContextChars should not be overridden by per-chat settings.
+// This prevents old chats with small context limits from ignoring user's updated settings.
 export const mergeChatSettings = (globalSettings: AstraCodexSettings, chatSettings?: Partial<AstraCodexSettings>): AstraCodexSettings => {
   const defaults = mergeSettings();
   const merged = mergeSettings(chatSettings as Partial<AstraCodexSettings>);
 
   return {
     ...merged,
-    // enforce global model/baseUrl
+    // enforce global model/baseUrl/maxContextChars - user's current settings always win
     baseUrl: globalSettings.baseUrl,
     model: globalSettings.model,
+    maxContextChars: globalSettings.maxContextChars || defaults.maxContextChars,
 
-    // treat 0 as missing for numeric limits
-    maxContextChars: merged.maxContextChars > 0 ? merged.maxContextChars : globalSettings.maxContextChars || defaults.maxContextChars,
+    // treat 0 as missing for maxMemoryChars
     maxMemoryChars: merged.maxMemoryChars > 0 ? merged.maxMemoryChars : globalSettings.maxMemoryChars || defaults.maxMemoryChars,
-
-    // default slider value if missing
-    contextSliderValue:
-      typeof merged.contextSliderValue === 'number' && merged.contextSliderValue > 0
-        ? merged.contextSliderValue
-        : globalSettings.contextSliderValue || defaults.contextSliderValue,
 
     // allow includeActiveNote to follow global unless explicitly set in chat
     includeActiveNote:
       typeof (chatSettings as any)?.includeActiveNote === 'boolean'
         ? (chatSettings as any).includeActiveNote
-        : globalSettings.includeActiveNote
+        : globalSettings.includeActiveNote,
+    
+    // contextSliderValue is deprecated but kept for backwards compatibility
+    contextSliderValue: defaults.contextSliderValue
   };
 };
 
@@ -57,10 +54,8 @@ export const restoreChatState = (record: ChatRecord): ChatStateSnapshot => {
     model: merged.model && merged.model.trim() ? merged.model : defaults.model,
     maxContextChars: merged.maxContextChars > 0 ? merged.maxContextChars : defaults.maxContextChars,
     maxMemoryChars: merged.maxMemoryChars > 0 ? merged.maxMemoryChars : defaults.maxMemoryChars,
-    contextSliderValue:
-      typeof merged.contextSliderValue === 'number' && merged.contextSliderValue > 0
-        ? merged.contextSliderValue
-        : defaults.contextSliderValue,
+    // contextSliderValue is deprecated, just use default
+    contextSliderValue: defaults.contextSliderValue,
     includeActiveNote:
       typeof (record.settings as any)?.includeActiveNote === 'boolean'
         ? (record.settings as any).includeActiveNote

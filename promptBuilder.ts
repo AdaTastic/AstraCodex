@@ -93,12 +93,15 @@ export const buildPrompt = ({
     contextSections.push(`Tools:\n${toolBlock}`);
   }
 
-  if (typeof history === 'string' && history.trim().length > 0) {
-    contextSections.push(`Conversation History:\n${history.trim()}`);
-  }
-
+  // IMPORTANT: lastDocument comes BEFORE history so it survives truncation.
+  // The model needs to remember what it just read more than old conversation turns.
   if (lastDocument?.content?.trim()) {
     contextSections.push(`Last Document Context (${lastDocument.path}):\n${lastDocument.content.trim()}`);
+  }
+
+  // History is lower priority - can be truncated if context is tight.
+  if (typeof history === 'string' && history.trim().length > 0) {
+    contextSections.push(`Conversation History:\n${history.trim()}`);
   }
 
 // Update to clamp the full length including section header for effective max memory chars

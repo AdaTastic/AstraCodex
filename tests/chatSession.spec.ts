@@ -3,13 +3,15 @@ import { createChatRecord, mergeChatSettings, restoreChatState } from '../chatSe
 import { DEFAULT_SETTINGS } from '../settings';
 
 describe('chatSession', () => {
-  it('keeps global model/baseUrl when merging chat settings', () => {
-    const global = { ...DEFAULT_SETTINGS, baseUrl: 'GLOBAL_URL', model: 'GLOBAL_MODEL' };
-    const merged = mergeChatSettings(global, { baseUrl: 'CHAT_URL', model: 'CHAT_MODEL', maxContextChars: 123 } as any);
+  it('keeps global model/baseUrl/maxContextChars when merging chat settings', () => {
+    // Global settings should ALWAYS win for model, baseUrl, AND maxContextChars
+    // This prevents old chats with small maxContextChars from overriding new global settings
+    const global = { ...DEFAULT_SETTINGS, baseUrl: 'GLOBAL_URL', model: 'GLOBAL_MODEL', maxContextChars: 120000 };
+    const merged = mergeChatSettings(global, { baseUrl: 'CHAT_URL', model: 'CHAT_MODEL', maxContextChars: 8000 } as any);
 
     expect(merged.baseUrl).toBe('GLOBAL_URL');
     expect(merged.model).toBe('GLOBAL_MODEL');
-    expect(merged.maxContextChars).toBe(123);
+    expect(merged.maxContextChars).toBe(120000); // Global should win!
   });
 
   it('merges empty/missing settings with defaults on restore', () => {

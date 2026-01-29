@@ -33,10 +33,11 @@ var DEFAULT_SETTINGS = {
   baseUrl: "http://127.0.0.1:11434",
   model: "qwen2.5:32b-instruct",
   includeActiveNote: false,
-  maxContextChars: 8e3,
+  maxContextChars: 32e3,
+  // Increased default to support larger context windows (32K models)
   maxMemoryChars: 2e3,
   contextSliderValue: 50
-  // Default value for the context slider
+  // Deprecated but kept for backwards compatibility
 };
 var defaultSettings = () => ({ ...DEFAULT_SETTINGS });
 var mergeSettings = (overrides) => {
@@ -164,13 +165,13 @@ ${rulesBlock}`);
     contextSections.push(`Tools:
 ${toolBlock}`);
   }
-  if (typeof history === "string" && history.trim().length > 0) {
-    contextSections.push(`Conversation History:
-${history.trim()}`);
-  }
   if ((_a = lastDocument == null ? void 0 : lastDocument.content) == null ? void 0 : _a.trim()) {
     contextSections.push(`Last Document Context (${lastDocument.path}):
 ${lastDocument.content.trim()}`);
+  }
+  if (typeof history === "string" && history.trim().length > 0) {
+    contextSections.push(`Conversation History:
+${history.trim()}`);
   }
   if (typeof memory === "string" && memory.trim().length > 0) {
     const trimmedMemory = `Memory: ${memory.trim()}`;
@@ -270,7 +271,7 @@ var ModelClient = class {
     this.fetchImpl = baseFetch ? baseFetch.bind(globalThis) : fetch;
   }
   async generateStream(prompt, onDelta, opts) {
-    const numCtx = Math.round(2048 + this.settings.contextSliderValue / 100 * 30720);
+    const numCtx = Math.min(32768, Math.round(this.settings.maxContextChars * 0.25));
     const url = `${this.settings.baseUrl}/api/generate`;
     const response = await this.fetchImpl(url, {
       method: "POST",
@@ -529,16 +530,16 @@ var mergeChatSettings = (globalSettings, chatSettings) => {
   const merged = mergeSettings(chatSettings);
   return {
     ...merged,
-    // enforce global model/baseUrl
+    // enforce global model/baseUrl/maxContextChars - user's current settings always win
     baseUrl: globalSettings.baseUrl,
     model: globalSettings.model,
-    // treat 0 as missing for numeric limits
-    maxContextChars: merged.maxContextChars > 0 ? merged.maxContextChars : globalSettings.maxContextChars || defaults.maxContextChars,
+    maxContextChars: globalSettings.maxContextChars || defaults.maxContextChars,
+    // treat 0 as missing for maxMemoryChars
     maxMemoryChars: merged.maxMemoryChars > 0 ? merged.maxMemoryChars : globalSettings.maxMemoryChars || defaults.maxMemoryChars,
-    // default slider value if missing
-    contextSliderValue: typeof merged.contextSliderValue === "number" && merged.contextSliderValue > 0 ? merged.contextSliderValue : globalSettings.contextSliderValue || defaults.contextSliderValue,
     // allow includeActiveNote to follow global unless explicitly set in chat
-    includeActiveNote: typeof (chatSettings == null ? void 0 : chatSettings.includeActiveNote) === "boolean" ? chatSettings.includeActiveNote : globalSettings.includeActiveNote
+    includeActiveNote: typeof (chatSettings == null ? void 0 : chatSettings.includeActiveNote) === "boolean" ? chatSettings.includeActiveNote : globalSettings.includeActiveNote,
+    // contextSliderValue is deprecated but kept for backwards compatibility
+    contextSliderValue: defaults.contextSliderValue
   };
 };
 var restoreChatState = (record) => {
@@ -551,7 +552,8 @@ var restoreChatState = (record) => {
     model: merged.model && merged.model.trim() ? merged.model : defaults.model,
     maxContextChars: merged.maxContextChars > 0 ? merged.maxContextChars : defaults.maxContextChars,
     maxMemoryChars: merged.maxMemoryChars > 0 ? merged.maxMemoryChars : defaults.maxMemoryChars,
-    contextSliderValue: typeof merged.contextSliderValue === "number" && merged.contextSliderValue > 0 ? merged.contextSliderValue : defaults.contextSliderValue,
+    // contextSliderValue is deprecated, just use default
+    contextSliderValue: defaults.contextSliderValue,
     includeActiveNote: typeof ((_a = record.settings) == null ? void 0 : _a.includeActiveNote) === "boolean" ? record.settings.includeActiveNote : defaults.includeActiveNote
   };
   return {
@@ -1489,12 +1491,6 @@ var AstraCodexSettingTab = class extends import_obsidian2.PluginSettingTab {
     new import_obsidian2.Setting(containerEl).setName("Include active note by default").setDesc("Sets the default toggle state for active note context.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.includeActiveNote).onChange(async (value) => {
         this.plugin.settings.includeActiveNote = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Context window size").setDesc("Controls how much context the model can use (2K-32K tokens).").addSlider(
-      (slider) => slider.setLimits(0, 100, 1).setValue(this.plugin.settings.contextSliderValue).setDynamicTooltip().onChange(async (value) => {
-        this.plugin.settings.contextSliderValue = value;
         await this.plugin.saveSettings();
       })
     );
