@@ -45,21 +45,16 @@ describe('agentLoop', () => {
     expect(result.text).toContain('Done.');
   });
 
-  it('calls onToolError and retries when multiple tool blocks detected', async () => {
+  it('uses the last tool block when multiple are present', async () => {
     const model = {
       generateStream: vi
         .fn()
-        // First call returns multiple tool blocks (error case)
+        // Returns multiple tool blocks - should use the LAST one
         .mockResolvedValueOnce({
           header: { state: 'acting', needsConfirmation: false },
-          text: 'STATE: acting\n```tool\n{"name":"read","args":{}}\n```\nFINAL: here\n```tool\n{"name":"read","args":{}}\n```'
+          text: 'STATE: acting\n```tool\n{"name":"list","args":{}}\n```\nFINAL: here\n```tool\n{"name":"read","args":{"path":"correct.md"},"retrigger":{"message":"reading"}}\n```'
         })
-        // Second call after error retry returns valid single block
-        .mockResolvedValueOnce({
-          header: { state: 'acting', needsConfirmation: false },
-          text: 'STATE: acting\n```tool\n{"name":"read","args":{"path":"a.md"},"retrigger":{"message":"reading"}}\n```'
-        })
-        // Third call after tool execution
+        // After tool execution
         .mockResolvedValueOnce({
           header: { state: 'idle', needsConfirmation: false },
           text: 'Done reading.'
@@ -70,20 +65,16 @@ describe('agentLoop', () => {
       executeTool: vi.fn(async () => 'file content')
     } as any;
 
-    const toolErrors: string[] = [];
     const result = await runAgentLoop({
       initialUserMessage: 'Read file',
       buildPrompt: (msg) => msg,
       model: model as any,
-      toolRunner,
-      callbacks: {
-        onToolError: ({ error }) => toolErrors.push(error)
-      }
+      toolRunner
     });
 
-    expect(toolErrors.length).toBe(1);
-    expect(toolErrors[0]).toContain('Multiple tool blocks');
-    expect(model.generateStream).toHaveBeenCalledTimes(3);
+    // Should use the LAST tool block (read with path), not the first (list)
+    expect(toolRunner.executeTool).toHaveBeenCalledWith('read', { path: 'correct.md' });
+    expect(model.generateStream).toHaveBeenCalledTimes(2);
   });
 
   it('stops after maxTurns limit', async () => {

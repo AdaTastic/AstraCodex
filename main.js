@@ -579,15 +579,10 @@ var extractFencedToolCall = (text) => {
   if (!allMatches || allMatches.length === 0) {
     return null;
   }
-  if (allMatches.length > 1) {
-    return {
-      error: `Multiple tool blocks detected (${allMatches.length}). You must output exactly ONE tool block per response. Do not repeat tool calls.`,
-      blockCount: allMatches.length
-    };
-  }
-  const match = text.match(/```tool\s*([\s\S]*?)```/);
-  if (!match) return null;
-  const rawJson = match[1].trim();
+  const lastBlock = allMatches[allMatches.length - 1];
+  const jsonMatch = lastBlock.match(/```tool\s*([\s\S]*?)```/);
+  if (!jsonMatch) return null;
+  const rawJson = jsonMatch[1].trim();
   try {
     const parsed = JSON.parse(rawJson);
     if (!(parsed == null ? void 0 : parsed.name) || typeof parsed.name !== "string") return null;
@@ -599,7 +594,7 @@ var extractFencedToolCall = (text) => {
         args,
         retrigger
       },
-      rawBlock: match[0]
+      rawBlock: lastBlock
     };
   } catch (e) {
     return null;

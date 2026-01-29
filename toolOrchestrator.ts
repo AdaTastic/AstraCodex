@@ -25,8 +25,9 @@ export const isExtractionError = (result: ExtractionResult | null): result is Ex
 };
 
 /**
- * Extracts a single fenced tool block from model output.
- * Returns an error if multiple tool blocks are detected.
+ * Extracts a fenced tool block from model output.
+ * When multiple tool blocks exist, uses the LAST one (models often output
+ * "planning" blocks in think, then the real one after).
  *
  * Only triggers on:
  *
@@ -35,24 +36,20 @@ export const isExtractionError = (result: ExtractionResult | null): result is Ex
  * ```
  */
 export const extractFencedToolCall = (text: string): ExtractionResult | null => {
-  // Count all tool blocks to detect duplicates
+  // Find all tool blocks
   const allMatches = text.match(/```tool\s*[\s\S]*?```/g);
   
   if (!allMatches || allMatches.length === 0) {
     return null;
   }
   
-  if (allMatches.length > 1) {
-    return {
-      error: `Multiple tool blocks detected (${allMatches.length}). You must output exactly ONE tool block per response. Do not repeat tool calls.`,
-      blockCount: allMatches.length
-    };
-  }
+  // Use the LAST tool block (models often output planning blocks in think, 
+  // then the real one after)
+  const lastBlock = allMatches[allMatches.length - 1];
+  const jsonMatch = lastBlock.match(/```tool\s*([\s\S]*?)```/);
+  if (!jsonMatch) return null;
 
-  const match = text.match(/```tool\s*([\s\S]*?)```/);
-  if (!match) return null;
-
-  const rawJson = match[1].trim();
+  const rawJson = jsonMatch[1].trim();
   try {
     const parsed = JSON.parse(rawJson) as ToolCall;
     if (!parsed?.name || typeof parsed.name !== 'string') return null;
@@ -68,7 +65,7 @@ export const extractFencedToolCall = (text: string): ExtractionResult | null => 
         args,
         retrigger
       },
-      rawBlock: match[0]
+      rawBlock: lastBlock
     };
   } catch {
     return null;
