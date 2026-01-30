@@ -28,8 +28,13 @@ describe('E2E: File Reading', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    // Print debug output before assertions
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Verify: read was called exactly once with correct path
     expect(ctx.vault.calls.read).toHaveLength(1);
@@ -55,8 +60,12 @@ describe('E2E: File Reading', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 6
+      maxTurns: 6,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Model should call list to find files first
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -79,8 +88,12 @@ describe('E2E: File Reading', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 8
+      maxTurns: 8,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should read the file once, not repeatedly
     const readCallsForTestMd = ctx.vault.calls.read.filter(c => c.path === 'test.md');
@@ -101,8 +114,12 @@ describe('E2E: File Reading', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Model should acknowledge the error in response
     const lowerText = result.text.toLowerCase();
@@ -142,8 +159,12 @@ describe('E2E: File Reading', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should NOT call read again - file content is in history
     expect(ctx.vault.calls.read).toHaveLength(0);

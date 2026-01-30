@@ -27,8 +27,12 @@ describe('E2E: File Writing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call write
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -55,8 +59,12 @@ describe('E2E: File Writing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call append (not write) for existing file
     expect(ctx.vault.calls.append.length).toBeGreaterThanOrEqual(1);
@@ -81,8 +89,12 @@ describe('E2E: File Writing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call write with nested path
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -108,8 +120,12 @@ describe('E2E: File Writing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call write (overwrite) not append
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -132,8 +148,12 @@ describe('E2E: File Writing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should create file
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);

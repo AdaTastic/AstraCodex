@@ -30,8 +30,12 @@ describe('E2E: File Listing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call list with notes prefix
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -62,8 +66,12 @@ describe('E2E: File Listing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call list
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -86,8 +94,12 @@ describe('E2E: File Listing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should indicate no files found or folder is empty
     const lowerText = result.text.toLowerCase();
@@ -116,8 +128,12 @@ describe('E2E: File Listing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call list
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -144,8 +160,12 @@ describe('E2E: File Listing', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call list with projects/web prefix
     const webLists = ctx.vault.calls.list.filter(c => 

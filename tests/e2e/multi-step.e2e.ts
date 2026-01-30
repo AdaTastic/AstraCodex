@@ -40,8 +40,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should write or append (read already happened in history)
     const hasWrite = ctx.vault.calls.write.length > 0 || ctx.vault.calls.append.length > 0;
@@ -80,8 +84,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 4
+      maxTurns: 4,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should write to target (read already happened in history)
     const targetWrites = ctx.vault.calls.write.filter(c => c.path === 'target.md');
@@ -107,8 +115,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 8
+      maxTurns: 8,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should complete in few turns, not exhaust maxTurns
     // Count assistant messages added after the user message
@@ -136,8 +148,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 6
+      maxTurns: 6,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should try to read main.md first (will fail)
     const mainReads = ctx.vault.calls.read.filter(c => c.path === 'main.md');
@@ -167,8 +183,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 6
+      maxTurns: 6,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should call list first
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -197,8 +217,12 @@ describe('E2E: Multi-Step Operations', () => {
       buildPrompt: ctx.buildPrompt,
       model: ctx.model,
       toolRunner: ctx.toolRunner,
-      maxTurns: 10
+      maxTurns: 10,
+      callbacks: ctx.debugCallbacks
     });
+
+    ctx.printDebug();
+    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
 
     // Should read all three files
     expect(ctx.vault.calls.read.length).toBeGreaterThanOrEqual(3);

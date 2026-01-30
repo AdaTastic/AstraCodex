@@ -121,6 +121,62 @@ export const buildTestPrompt = (history: Message[], settings: AstraCodexSettings
 };
 
 /**
+ * Debug logger for E2E tests.
+ * Captures all model outputs and tool calls for debugging.
+ */
+export interface DebugLog {
+  turns: Array<{
+    turn: number;
+    modelResponse: string;
+    toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+    toolResults: Array<{ name: string; result: unknown }>;
+  }>;
+}
+
+export const createDebugCallbacks = (log: DebugLog) => {
+  let currentTurn = -1;
+  
+  return {
+    onTurnStart: ({ turn }: { turn: number }) => {
+      currentTurn = turn;
+      log.turns[turn] = {
+        turn,
+        modelResponse: '',
+        toolCalls: [],
+        toolResults: []
+      };
+      console.log(`\n--- Turn ${turn} ---`);
+    },
+    onAssistantDelta: (delta: string, fullText: string) => {
+      if (log.turns[currentTurn]) {
+        log.turns[currentTurn].modelResponse = fullText;
+      }
+    },
+    onToolResult: ({ name, result }: { name: string; result: unknown }) => {
+      console.log(`[Tool: ${name}] Result:`, typeof result === 'string' ? result.slice(0, 200) : result);
+      if (log.turns[currentTurn]) {
+        log.turns[currentTurn].toolResults.push({ name, result });
+      }
+    }
+  };
+};
+
+export const printDebugLog = (log: DebugLog) => {
+  console.log('\n========== DEBUG LOG ==========');
+  for (const turn of log.turns) {
+    console.log(`\n--- Turn ${turn.turn} ---`);
+    console.log('Model Response:', turn.modelResponse.slice(0, 500));
+    if (turn.modelResponse.length > 500) {
+      console.log('... (truncated)');
+    }
+    if (turn.toolResults.length > 0) {
+      console.log('Tool Results:', turn.toolResults);
+    }
+  }
+  console.log('\n================================');
+};
+
+/**
  * Create the full test context for E2E tests.
  */
 export const createTestContext = (files: Record<string, string> = {}) => {
@@ -128,12 +184,17 @@ export const createTestContext = (files: Record<string, string> = {}) => {
   const model = new ModelClient(settings);
   const vault = createMockVault(files);
   const toolRunner = createMockToolRunner(vault);
+  const debugLog: DebugLog = { turns: [] };
+  const debugCallbacks = createDebugCallbacks(debugLog);
 
   return {
     settings,
     model,
     vault,
     toolRunner,
+    debugLog,
+    debugCallbacks,
+    printDebug: () => printDebugLog(debugLog),
     buildPrompt: (history: Message[]) => buildTestPrompt(history, settings)
   };
 };
