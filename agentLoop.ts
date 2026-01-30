@@ -52,6 +52,20 @@ export const runAgentLoop = async ({
   signal
 }: RunAgentLoopArgs): Promise<ModelResponse> => {
   let lastResponse: ModelResponse | null = null;
+  
+  // Track files already read to prevent re-reading
+  const filesReadThisSession = new Set<string>();
+  
+  // Scan history for previously read files
+  for (const msg of history) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.name === 'read' && tc.arguments?.path) {
+          filesReadThisSession.add(String(tc.arguments.path));
+        }
+      }
+    }
+  }
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal?.aborted) {
@@ -119,8 +133,26 @@ export const runAgentLoop = async ({
       throw new DOMException('Aborted', 'AbortError');
     }
 
+    // Check for duplicate file read
+    const toolCall = extracted.toolCall;
+    if (toolCall.name === 'read' && toolCall.arguments?.path) {
+      const filePath = String(toolCall.arguments.path);
+      if (filesReadThisSession.has(filePath)) {
+        // Don't execute - inject hint and let model continue
+        const hintMessage: Message = {
+          role: 'user',
+          content: `NOTE: File "${filePath}" was already read earlier in this conversation. The content is in the history above. Please use that content instead of re-reading.`
+        };
+        history.push(hintMessage);
+        callbacks?.onMessageAdded?.(hintMessage);
+        continue;
+      }
+      // Track this read
+      filesReadThisSession.add(filePath);
+    }
+
     // Execute tool
-    const executed = await executeToolCall(toolRunner, extracted.toolCall);
+    const executed = await executeToolCall(toolRunner, toolCall);
     callbacks?.onToolResult?.({ name: executed.name, result: executed.result });
 
     // Add tool result to history as role:"tool" message (OpenAI format)

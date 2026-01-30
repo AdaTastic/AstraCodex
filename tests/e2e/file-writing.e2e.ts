@@ -12,14 +12,14 @@ import type { Message } from '../../types';
  * To run: RUN_E2E=true npm run test:e2e
  */
 
-const skipE2E = !process.env.RUN_E2E;
-
 describe('E2E: File Writing', () => {
-  it.skipIf(skipE2E)('should create a new file when asked', async () => {
+  it('should create a new file when asked', async () => {
     const ctx = createTestContext({});
 
     const history: Message[] = [
-      { role: 'user', content: 'Create a new file called todo.md with a task list: Buy groceries, Clean room' }
+      { role: 'user', content: 'Create a new file called todo.md with a task list: Buy groceries, Clean room' },
+      { role: 'assistant', content: 'I\'ll create todo.md with your task list. Shall I proceed?' },
+      { role: 'user', content: 'Yes, please proceed.' }
     ];
 
     await runAgentLoop({
@@ -39,13 +39,15 @@ describe('E2E: File Writing', () => {
     expect(writeCall.content.toLowerCase()).toContain('groceries');
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should append to existing file when asked', async () => {
+  it('should append to existing file when asked', async () => {
     const ctx = createTestContext({
       'journal.md': '# Journal\n\n## Day 1\nStarted project'
     });
 
     const history: Message[] = [
-      { role: 'user', content: 'Add a new entry to journal.md: Day 2 - Made progress on features' }
+      { role: 'user', content: 'Add a new entry to journal.md: Day 2 - Made progress on features' },
+      { role: 'assistant', content: 'I\'ll add the new entry to journal.md. Shall I proceed?' },
+      { role: 'user', content: 'Yes, go ahead.' }
     ];
 
     await runAgentLoop({
@@ -65,11 +67,13 @@ describe('E2E: File Writing', () => {
     expect(appendCall.content.toLowerCase()).toContain('day 2');
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should write to nested path creating directories', async () => {
+  it('should write to nested path creating directories', async () => {
     const ctx = createTestContext({});
 
     const history: Message[] = [
-      { role: 'user', content: 'Create a file at projects/web/readme.md with title "Web Project"' }
+      { role: 'user', content: 'Create a file at projects/web/readme.md with title "Web Project"' },
+      { role: 'assistant', content: 'I\'ll create projects/web/readme.md with the title "Web Project". Shall I proceed?' },
+      { role: 'user', content: 'Yes.' }
     ];
 
     await runAgentLoop({
@@ -88,13 +92,15 @@ describe('E2E: File Writing', () => {
     expect(writeCall.path).toContain('readme.md');
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should overwrite file when explicitly asked', async () => {
+  it('should overwrite file when explicitly asked', async () => {
     const ctx = createTestContext({
       'config.md': '# Old Config\n\nold settings'
     });
 
     const history: Message[] = [
-      { role: 'user', content: 'Replace the contents of config.md with: # New Config\n\nNew settings here' }
+      { role: 'user', content: 'Replace the contents of config.md with: # New Config\n\nNew settings here' },
+      { role: 'assistant', content: 'I\'ll replace the contents of config.md with the new config. Shall I proceed?' },
+      { role: 'user', content: 'Yes, replace it.' }
     ];
 
     await runAgentLoop({
@@ -112,11 +118,13 @@ describe('E2E: File Writing', () => {
     expect(writeCall.content.toLowerCase()).toContain('new config');
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should generate appropriate markdown structure', async () => {
+  it('should generate appropriate markdown structure', async () => {
     const ctx = createTestContext({});
 
     const history: Message[] = [
-      { role: 'user', content: 'Create a meeting notes file called meeting-2024-01.md with attendees: Alice, Bob, Charlie and action items' }
+      { role: 'user', content: 'Create a meeting notes file called meeting-2024-01.md with attendees: Alice, Bob, Charlie and action items' },
+      { role: 'assistant', content: 'I\'ll create meeting-2024-01.md with the meeting notes. Shall I proceed?' },
+      { role: 'user', content: 'Yes, create it.' }
     ];
 
     await runAgentLoop({

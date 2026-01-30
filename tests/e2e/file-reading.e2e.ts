@@ -12,10 +12,8 @@ import type { Message } from '../../types';
  * To run: RUN_E2E=true npm run test:e2e
  */
 
-const skipE2E = !process.env.RUN_E2E;
-
 describe('E2E: File Reading', () => {
-  it.skipIf(skipE2E)('should read a file when asked', async () => {
+  it('should read a file when asked', async () => {
     const ctx = createTestContext({
       'notes/test.md': '# Test File\n\nThis is test content with **bold** text.',
       'notes/other.md': '# Other File'
@@ -41,7 +39,7 @@ describe('E2E: File Reading', () => {
     expect(result.text).toContain('Test File');
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should use list before read when path is ambiguous', async () => {
+  it('should use list before read when path is ambiguous', async () => {
     const ctx = createTestContext({
       'notes/project.md': '# Project Notes',
       'docs/project.md': '# Project Docs',
@@ -67,7 +65,7 @@ describe('E2E: File Reading', () => {
     expect(ctx.vault.calls.read.length).toBeGreaterThanOrEqual(1);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should not repeat read for same file', async () => {
+  it('should not repeat read for same file', async () => {
     const ctx = createTestContext({
       'test.md': '# Hello World\n\nImportant content here.'
     });
@@ -89,7 +87,7 @@ describe('E2E: File Reading', () => {
     expect(readCallsForTestMd.length).toBe(1);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should handle file not found gracefully', async () => {
+  it('should handle file not found gracefully', async () => {
     const ctx = createTestContext({
       'existing.md': '# Exists'
     });
@@ -116,7 +114,7 @@ describe('E2E: File Reading', () => {
     ).toBe(true);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should not re-read file already in conversation', async () => {
+  it('should not re-read file already in conversation', async () => {
     const ctx = createTestContext({
       'data.md': '# Data\n\nValue: 42'
     });

@@ -39,9 +39,26 @@ Rules:
 - Tool results will be added to conversation history automatically
 - You will be called again after each tool execution to see the result
 
-FILE READING GUIDANCE:
-- If the user asks to read a file by name/title, call \`list\` first to find the correct path.
-- Only call \`read\` after you have a specific vault path.
+CRITICAL FILE READING RULES:
+1. NEVER re-read a file that was already read - check Conversation History for [FILE: path] entries
+2. If user gives an ambiguous filename (no path), call \`list\` first to find the full path
+3. Only call \`read\` after you have a specific vault path from list results
+
+MULTI-STEP TASKS:
+- For read-only operations: complete all reads, then respond
+- For write operations: ALWAYS ask for confirmation before writing/appending
+- Show the user what you plan to write and ask: "Shall I proceed with this change?"
+- Only execute write/append after user confirms
+
+WRITE SAFETY:
+- NEVER write or append without explicit user confirmation
+- After reading a file, describe your planned changes and wait for approval
+- Use \`append\` for adding content to existing files
+- Use \`write\` for creating new files or replacing entire content
+
+ERROR HANDLING:
+- If a tool returns "ERROR:", acknowledge the error and try alternatives
+- If asked to fallback to another file, do so automatically
 
 Your response should be clean and conversational.
 DO NOT output "STATE:" or "NEEDS_CONFIRMATION:" headers - state is tracked internally.

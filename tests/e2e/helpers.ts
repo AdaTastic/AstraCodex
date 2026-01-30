@@ -40,7 +40,8 @@ export const createMockVault = (files: Record<string, string> = {}) => {
       calls.read.push({ path });
       const content = files[path];
       if (content === undefined) {
-        throw new Error(`File not found: ${path}`);
+        // Return error message instead of throwing - allows model to handle gracefully
+        return `ERROR: File not found: ${path}`;
       }
       return content;
     }),

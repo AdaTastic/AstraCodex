@@ -12,10 +12,8 @@ import type { Message } from '../../types';
  * To run: RUN_E2E=true npm run test:e2e
  */
 
-const skipE2E = !process.env.RUN_E2E;
-
 describe('E2E: File Listing', () => {
-  it.skipIf(skipE2E)('should list files when asked', async () => {
+  it('should list files when asked', async () => {
     const ctx = createTestContext({
       'notes/daily.md': '# Daily',
       'notes/weekly.md': '# Weekly',
@@ -47,7 +45,7 @@ describe('E2E: File Listing', () => {
     ).toBe(true);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should list all files when asked for vault contents', async () => {
+  it('should list all files when asked for vault contents', async () => {
     const ctx = createTestContext({
       'readme.md': '# Readme',
       'notes/one.md': '# One',
@@ -74,7 +72,7 @@ describe('E2E: File Listing', () => {
     expect(result.text.length).toBeGreaterThan(20);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should handle empty directory', async () => {
+  it('should handle empty directory', async () => {
     const ctx = createTestContext({
       'other/file.md': '# Other'
     });
@@ -101,7 +99,7 @@ describe('E2E: File Listing', () => {
     ).toBe(true);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should filter by file type when asked', async () => {
+  it('should filter by file type when asked', async () => {
     const ctx = createTestContext({
       'notes/meeting.md': '# Meeting',
       'notes/tasks.md': '# Tasks',
@@ -129,7 +127,7 @@ describe('E2E: File Listing', () => {
     expect(lowerText.includes('meeting') || lowerText.includes('tasks')).toBe(true);
   }, { timeout: 60000 });
 
-  it.skipIf(skipE2E)('should drill down into nested directories', async () => {
+  it('should drill down into nested directories', async () => {
     const ctx = createTestContext({
       'projects/web/index.md': '# Web Project',
       'projects/web/api.md': '# API Docs',

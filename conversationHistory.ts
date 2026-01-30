@@ -81,8 +81,24 @@ export const buildConversationHistory = (
     } else if (msg.role === 'tool') {
       // Format tool result clearly for model context
       const rawContent = msg.content?.trim() || JSON.stringify(msg.tool_result ?? '');
-      const toolName = msg.tool_call_id?.split('-').pop() ?? 'tool';
-      const content = `[TOOL RESULT: ${toolName}]\n${rawContent}`;
+      const toolCallId = msg.tool_call_id ?? '';
+      const toolName = toolCallId.split('-').pop() ?? 'tool';
+      
+      // Extract path from preceding assistant message's tool_calls if available
+      let filePath = '';
+      if (toolName === 'read' && i > 0) {
+        const prevMsg = messages[i - 1];
+        if (prevMsg?.role === 'assistant' && prevMsg.tool_calls?.length) {
+          const readCall = prevMsg.tool_calls.find(tc => tc.name === 'read');
+          if (readCall?.arguments?.path) {
+            filePath = String(readCall.arguments.path);
+          }
+        }
+      }
+      
+      // Make file reads highly visible for deduplication
+      const label = filePath ? `[FILE: ${filePath}]` : `[TOOL RESULT: ${toolName}]`;
+      const content = `${label}\n${rawContent}`;
       entry = { 
         role: 'tool', 
         content,
