@@ -3,24 +3,24 @@ import { describe, it, expect, vi } from 'vitest';
 /**
  * E2E Tests: File Listing
  * 
- * These tests verify actual model behavior with directory listing operations.
- * They are skipped by default as they require a real model connection.
- * 
- * To run: Remove .skip from tests, configure model, run `npm run test:e2e`
+ * Skipped by default - requires real model connection.
+ * To run: RUN_E2E=true npm run test:e2e
  */
 
+const skipE2E = !process.env.RUN_E2E;
+
 describe('E2E: File Listing', () => {
-  it.skip('should list files in a directory', async () => {
+  it.skipIf(skipE2E)('should list files in a directory', async () => {
     // Model should call list tool with correct prefix
     expect(true).toBe(true);
   });
 
-  it.skip('should handle nested directory listing', async () => {
+  it.skipIf(skipE2E)('should handle nested directory listing', async () => {
     // Model should be able to drill down into subdirectories
     expect(true).toBe(true);
   });
 
-  it.skip('should filter results when asked for specific file types', async () => {
+  it.skipIf(skipE2E)('should filter results when asked for specific file types', async () => {
     // Model should be able to filter or summarize file types
     expect(true).toBe(true);
   });

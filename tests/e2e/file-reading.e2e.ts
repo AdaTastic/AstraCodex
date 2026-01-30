@@ -4,10 +4,12 @@ import { describe, it, expect, vi } from 'vitest';
  * E2E Tests: File Reading
  * 
  * These tests verify actual model behavior with file reading operations.
- * They are skipped by default as they require a real model connection.
+ * Skipped by default - requires real model connection.
  * 
- * To run: Remove .skip from tests, configure model, run `npm run test:e2e`
+ * To run: RUN_E2E=true npm run test:e2e
  */
+
+const skipE2E = !process.env.RUN_E2E;
 
 const createMockVault = (files: Record<string, string>) => {
   const readCalls: string[] = [];
@@ -26,7 +28,7 @@ const createMockVault = (files: Record<string, string>) => {
 };
 
 describe('E2E: File Reading', () => {
-  it.skip('should read a file without repeating the call', async () => {
+  it.skipIf(skipE2E)('should read a file without repeating the call', async () => {
     const mockVault = createMockVault({ 
       'test.md': '# Hello World\n\nThis is test content.'
     });
@@ -47,7 +49,7 @@ describe('E2E: File Reading', () => {
     expect(true).toBe(true);
   });
 
-  it.skip('should use list before read when file path is ambiguous', async () => {
+  it.skipIf(skipE2E)('should use list before read when file path is ambiguous', async () => {
     const mockVault = createMockVault({
       'notes/project.md': '# Project Notes',
       'docs/project.md': '# Project Docs'
@@ -61,7 +63,7 @@ describe('E2E: File Reading', () => {
     expect(true).toBe(true);
   });
 
-  it.skip('should not re-read file already in conversation history', async () => {
+  it.skipIf(skipE2E)('should not re-read file already in conversation history', async () => {
     // If file was already read in the conversation,
     // model should use cached result, not read again
     
