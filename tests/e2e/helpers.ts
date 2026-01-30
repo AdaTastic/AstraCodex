@@ -180,52 +180,49 @@ export const writeDebugLog = (log: DebugLog, vaultCalls: Record<string, unknown[
     setCurrentTestName(testName);
   }
   
-  const logPath = getLogFilePath();
-  const lines: string[] = [];
-  
-  lines.push(`========== E2E TEST DEBUG LOG ==========`);
-  lines.push(`Test: ${currentTestName}`);
-  lines.push(`Time: ${new Date().toISOString()}`);
-  lines.push('');
+  // Print to console (no file writing)
+  console.log('\n========== E2E TEST DEBUG LOG ==========');
+  console.log(`Test: ${currentTestName}`);
+  console.log(`Time: ${new Date().toISOString()}`);
+  console.log('');
   
   for (const turn of log.turns) {
-    lines.push(`--- Turn ${turn.turn} ---`);
-    lines.push('');
-    lines.push('MODEL RESPONSE:');
-    lines.push(turn.modelResponse);
-    lines.push('');
+    console.log(`--- Turn ${turn.turn} ---`);
+    console.log('');
+    console.log('MODEL RESPONSE:');
+    console.log(turn.modelResponse);
+    console.log('');
     
     if (turn.toolResults.length > 0) {
-      lines.push('TOOL RESULTS:');
+      console.log('TOOL RESULTS:');
       for (const tr of turn.toolResults) {
-        lines.push(`  [${tr.name}]: ${typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2)}`);
+        console.log(`  [${tr.name}]: ${typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2)}`);
       }
-      lines.push('');
+      console.log('');
     }
   }
   
-  lines.push('========== VAULT CALLS ==========');
-  lines.push(JSON.stringify(vaultCalls, null, 2));
-  lines.push('');
-  lines.push('================================');
+  console.log('========== VAULT CALLS ==========');
+  console.log(JSON.stringify(vaultCalls, null, 2));
+  console.log('');
+  console.log('================================\n');
   
-  writeFileSync(logPath, lines.join('\n'), 'utf-8');
-  console.log(`Debug log written to: ${logPath}`);
-  
-  return logPath;
+  return null; // No file path returned
 };
 
 export const printDebugLog = (log: DebugLog) => {
-  // Still print to console for immediate visibility
+  // Full output to console (no truncation)
   console.log('\n========== DEBUG LOG ==========');
   for (const turn of log.turns) {
     console.log(`\n--- Turn ${turn.turn} ---`);
-    console.log('Model Response:', turn.modelResponse.slice(0, 500));
-    if (turn.modelResponse.length > 500) {
-      console.log('... (truncated, see log file for full output)');
-    }
+    console.log('MODEL RESPONSE:');
+    console.log(turn.modelResponse);
     if (turn.toolResults.length > 0) {
-      console.log('Tool Results:', turn.toolResults.map(tr => tr.name));
+      console.log('TOOL RESULTS:');
+      for (const tr of turn.toolResults) {
+        const resultStr = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2);
+        console.log(`  [${tr.name}]: ${resultStr}`);
+      }
     }
   }
   console.log('\n================================');
