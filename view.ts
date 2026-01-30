@@ -212,57 +212,61 @@ export class AgenticChatView extends ItemView {
   }
 
   private renderMessages() {
+    // Remember scroll position before re-render
+    const isAtBottom = this.transcriptEl.scrollTop + this.transcriptEl.clientHeight >= this.transcriptEl.scrollHeight - 50;
+    
     (this.transcriptEl as any).empty();
     for (const msg of this.messages) {
       const row = (this.transcriptEl as any).createDiv({ cls: ['agentic-chat-row', `role-${msg.role}`] });
       const bubble = row.createDiv({ cls: 'agentic-chat-bubble' });
-      const label = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System';
+      const label = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : msg.role === 'tool' ? 'System' : 'System';
       bubble.createDiv({ cls: 'agentic-chat-label', text: label });
 
-      if (msg.role === 'assistant' && msg.header) {
-        const headerToggle = bubble.createDiv({
-          cls: 'agentic-chat-header-toggle',
-          text: msg.headerExpanded ? 'Header ▾' : 'Header ▸'
-        });
-        headerToggle.addEventListener('click', () => {
-          msg.headerExpanded = !msg.headerExpanded;
-          this.renderMessages();
-        });
-
-        if (msg.headerExpanded) {
-          bubble.createDiv({ cls: 'agentic-chat-header-text', text: msg.header });
-        }
-      }
-
+      // Show think toggle for assistant messages with reasoning
       if (msg.role === 'assistant' && msg.think) {
         const thinkToggle = bubble.createDiv({
           cls: 'agentic-chat-header-toggle',
-          text: msg.thinkExpanded ? 'Think ▾' : 'Think ▸'
+          text: 'Think ▸'
         });
+        const thinkContent = bubble.createDiv({ cls: 'agentic-chat-header-text' });
+        thinkContent.style.display = 'none';
+        thinkContent.setText(msg.think);
+        
         thinkToggle.addEventListener('click', () => {
-          msg.thinkExpanded = !msg.thinkExpanded;
-          this.renderMessages();
+          const isHidden = thinkContent.style.display === 'none';
+          thinkContent.style.display = isHidden ? 'block' : 'none';
+          thinkToggle.setText(isHidden ? 'Think ▾' : 'Think ▸');
         });
-
-        if (msg.thinkExpanded) {
-          bubble.createDiv({ cls: 'agentic-chat-header-text', text: msg.think });
-        }
       }
 
-      const displayText =
-        msg.text && msg.text.trim().length > 0
-          ? msg.text
-          : msg.role === 'assistant' && msg.think
-            ? '(No final answer was produced — expand Think)'
-            : msg.text;
-
-      if (msg.role === 'assistant' && msg.activityLine) {
-        bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
+      // Derive activity line from tool_calls (not stored)
+      const activityLine = this.getMessageActivityLine(msg);
+      if (msg.role === 'assistant' && activityLine) {
+        bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: activityLine });
       }
 
+      const displayText = this.getMessageDisplayText(msg);
       bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
     }
-    this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    
+    // Only auto-scroll if user was already at the bottom
+    if (isAtBottom) {
+      this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    }
+  }
+
+  private getMessageActivityLine(msg: Message): string | null {
+    if (!msg.tool_calls?.length) return null;
+    return formatToolActivity(msg.tool_calls[0]);
+  }
+
+  private getMessageDisplayText(msg: Message): string {
+    const content = msg.content?.trim() || '';
+    if (content.length > 0) return content;
+    if (msg.role === 'assistant' && msg.think) {
+      return '(No final answer was produced — expand Think)';
+    }
+    return content;
   }
 
   private updateControls() {
@@ -325,46 +329,34 @@ export class AgenticChatView extends ItemView {
     this.editPreviewWrapper.show();
   }
 
-  private pushMessage(role: Message['role'], text: string, header?: string) {
-    this.messages.push({ role, text, header, headerExpanded: false });
+  private pushMessage(role: Message['role'], content: string) {
+    this.messages.push({ role, content });
     this.renderMessages();
   }
 
-
-  private updateLastAssistantMessage(text: string) {
+  private updateLastAssistantMessage(rawText: string) {
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === 'assistant') {
-      // Persist raw model output for debugging and future inspection.
-      last.rawText = text;
+      // Extract tool calls
+      const extracted = extractFencedToolCall(rawText);
+      if (extracted && !isExtractionError(extracted)) {
+        last.tool_calls = [{
+          name: extracted.toolCall.name,
+          arguments: extracted.toolCall.arguments ?? {}
+        }];
+      }
 
-      // Hide any tool blocks from the visible transcript.
-      const extracted = extractFencedToolCall(text);
-      this.activityLine = (extracted && !isExtractionError(extracted)) ? formatToolActivity(extracted.toolCall) : null;
-      last.activityLine = this.activityLine;
-
-      const withoutToolBlocks = stripToolBlocks(text);
+      // Extract thinking
+      const withoutToolBlocks = stripToolBlocks(rawText);
       const { think, rest } = extractThink(withoutToolBlocks);
       if (think) {
         last.think = think;
-        if (typeof last.thinkExpanded !== 'boolean') last.thinkExpanded = false;
       }
 
-      const { header, body } = extractHeaderAndBody(rest);
+      // Extract final content (strip STATE headers)
+      const { body } = extractHeaderAndBody(rest);
       const { final } = extractFinal(body);
-      if (header) {
-        last.header = header;
-        const chosen = final ?? body;
-        last.text = chosen;
-      } else if (this.parsedHeader) {
-        last.header = `STATE: ${this.parsedHeader.state}\nNEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        const { final: finalFromRest } = extractFinal(rest);
-        const chosen = finalFromRest ?? rest;
-        last.text = chosen;
-      } else {
-        const { final: finalFromRest } = extractFinal(rest);
-        const chosen = finalFromRest ?? rest;
-        last.text = chosen;
-      }
+      last.content = final ?? body;
     }
     this.renderMessages();
   }
@@ -402,7 +394,7 @@ export class AgenticChatView extends ItemView {
       const buildChatPrompt = (history: Message[]) => {
         // Get the latest user message from history
         const lastUserMsg = [...history].reverse().find(m => m.role === 'user');
-        const userMessage = lastUserMsg?.text ?? '';
+        const userMessage = lastUserMsg?.content ?? '';
 
         // 1) Compute fixed prompt length with no history
         const fixed = buildPrompt({

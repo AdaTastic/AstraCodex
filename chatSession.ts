@@ -41,6 +41,32 @@ export const createChatRecord = (record: ChatRecord): ChatRecord => {
   return record;
 };
 
+/**
+ * Migrates a message from old format to new OpenAI-compatible format.
+ * 
+ * Old format:
+ *   { role, text, rawText, activityLine, header, headerExpanded, toolCalls, toolResult, toolCallId }
+ * 
+ * New format:
+ *   { role, content, think, segments, tool_calls, tool_result, tool_call_id }
+ */
+const migrateMessage = (msg: any): Message => {
+  return {
+    role: msg.role,
+    // Prefer 'content' (new) over 'text' (old)
+    content: msg.content ?? msg.text ?? '',
+    // Keep think as-is
+    think: msg.think,
+    // Keep segments as-is
+    segments: msg.segments,
+    // Migrate tool fields from camelCase to snake_case
+    tool_calls: msg.tool_calls ?? msg.toolCalls,
+    tool_result: msg.tool_result ?? msg.toolResult,
+    tool_call_id: msg.tool_call_id ?? msg.toolCallId
+    // Dropped fields: rawText, activityLine, header, headerExpanded, thinkExpanded
+  };
+};
+
 export const restoreChatState = (record: ChatRecord): ChatStateSnapshot => {
   // Backwards compatible merge for older/broken chat files.
   // NOTE: This restore uses DEFAULT_SETTINGS only. The view layer will re-merge
@@ -62,10 +88,13 @@ export const restoreChatState = (record: ChatRecord): ChatStateSnapshot => {
         : defaults.includeActiveNote
   };
 
+  // Migrate messages from old format to new format
+  const messages = (record.messages || []).map(migrateMessage);
+
   return {
     settings,
     state: record.state,
-    messages: record.messages,
+    messages,
     lastDocument: record.lastDocument ?? null
   };
 };

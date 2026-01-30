@@ -63,8 +63,7 @@ export const runAgentLoop = async ({
     // Create assistant message slot BEFORE streaming so callbacks can update it
     const assistantMessage: Message = {
       role: 'assistant',
-      text: '',
-      rawText: ''
+      content: ''
     };
     history.push(assistantMessage);
     callbacks?.onMessageAdded?.(assistantMessage);
@@ -76,8 +75,7 @@ export const runAgentLoop = async ({
       (delta) => {
         streamed += delta;
         // Update the existing message in-place during streaming
-        assistantMessage.text = streamed;
-        assistantMessage.rawText = streamed;
+        assistantMessage.content = streamed;
         callbacks?.onAssistantDelta?.(delta, streamed);
       },
       { signal }
@@ -87,9 +85,7 @@ export const runAgentLoop = async ({
     callbacks?.onHeader?.(response.header);
 
     // Finalize assistant message with complete response
-    assistantMessage.text = response.text;
-    assistantMessage.rawText = response.text;
-    assistantMessage.header = response.header ? `STATE: ${response.header.state}` : undefined;
+    assistantMessage.content = response.text;
 
     // Extract tool call from response
     const extracted = extractFencedToolCall(response.text);
@@ -100,7 +96,7 @@ export const runAgentLoop = async ({
         name: extracted.toolCall.name,
         arguments: extracted.toolCall.arguments ?? {}
       };
-      assistantMessage.toolCalls = [toolCallInfo];
+      assistantMessage.tool_calls = [toolCallInfo];
     }
 
     // No tool call - done
@@ -112,7 +108,7 @@ export const runAgentLoop = async ({
       // Add error as user message and continue
       const errorMessage: Message = {
         role: 'user',
-        text: `ERROR: ${extracted.error}\n\nPlease try again with exactly ONE tool block.`
+        content: `ERROR: ${extracted.error}\n\nPlease try again with exactly ONE tool block.`
       };
       history.push(errorMessage);
       callbacks?.onMessageAdded?.(errorMessage);
@@ -127,14 +123,14 @@ export const runAgentLoop = async ({
     const executed = await executeToolCall(toolRunner, extracted.toolCall);
     callbacks?.onToolResult?.({ name: executed.name, result: executed.result });
 
-    // Add tool result to history as role:"tool" message
+    // Add tool result to history as role:"tool" message (OpenAI format)
     const toolResultMessage: Message = {
       role: 'tool',
-      text: typeof executed.result === 'string' 
+      content: typeof executed.result === 'string' 
         ? executed.result 
         : JSON.stringify(executed.result, null, 2),
-      toolResult: executed.result,
-      toolCallId: `${turn}-${executed.name}`
+      tool_result: executed.result,
+      tool_call_id: `${turn}-${executed.name}`
     };
     history.push(toolResultMessage);
     callbacks?.onMessageAdded?.(toolResultMessage);

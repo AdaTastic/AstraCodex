@@ -49,25 +49,25 @@ export interface ToolCallInfo {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * Message in OpenAI-compatible format.
+ * 
+ * Field naming follows OpenAI convention (snake_case for tool-related fields).
+ */
 export interface Message {
   role: Role;
-  text: string;
-  header?: string;
-  headerExpanded?: boolean;
+  /** Message content (renamed from 'text' for OpenAI compatibility) */
+  content: string;
+  /** Thinking/reasoning content (shown in collapsible UI) */
   think?: string;
-  thinkExpanded?: boolean;
-  /** Raw streamed model output (includes tool blocks, header lines, etc.) */
-  rawText?: string;
-  /** Display-only tool activity line derived from a parsed tool block. */
-  activityLine?: string | null;
   /** Parsed segments for agentic display (text interspersed with tool calls) */
   segments?: MessageSegment[];
-  /** Tool calls made in this message (for assistant role) */
-  toolCalls?: ToolCallInfo[];
-  /** Tool result content (for tool role) */
-  toolResult?: unknown;
-  /** ID linking tool result to tool call */
-  toolCallId?: string;
+  /** Tool calls made in this message (for assistant role) - OpenAI format */
+  tool_calls?: ToolCallInfo[];
+  /** Tool result content (for tool role) - OpenAI format */
+  tool_result?: unknown;
+  /** ID linking tool result to tool call - OpenAI format */
+  tool_call_id?: string;
 }
 
 export interface ParsedHeader {

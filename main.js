@@ -567,6 +567,23 @@ var mergeChatSettings = (globalSettings, chatSettings) => {
     contextSliderValue: defaults.contextSliderValue
   };
 };
+var migrateMessage = (msg) => {
+  var _a, _b, _c, _d, _e;
+  return {
+    role: msg.role,
+    // Prefer 'content' (new) over 'text' (old)
+    content: (_b = (_a = msg.content) != null ? _a : msg.text) != null ? _b : "",
+    // Keep think as-is
+    think: msg.think,
+    // Keep segments as-is
+    segments: msg.segments,
+    // Migrate tool fields from camelCase to snake_case
+    tool_calls: (_c = msg.tool_calls) != null ? _c : msg.toolCalls,
+    tool_result: (_d = msg.tool_result) != null ? _d : msg.toolResult,
+    tool_call_id: (_e = msg.tool_call_id) != null ? _e : msg.toolCallId
+    // Dropped fields: rawText, activityLine, header, headerExpanded, thinkExpanded
+  };
+};
 var restoreChatState = (record) => {
   var _a, _b;
   const defaults = mergeSettings();
@@ -581,10 +598,11 @@ var restoreChatState = (record) => {
     contextSliderValue: defaults.contextSliderValue,
     includeActiveNote: typeof ((_a = record.settings) == null ? void 0 : _a.includeActiveNote) === "boolean" ? record.settings.includeActiveNote : defaults.includeActiveNote
   };
+  const messages = (record.messages || []).map(migrateMessage);
   return {
     settings,
     state: record.state,
-    messages: record.messages,
+    messages,
     lastDocument: (_b = record.lastDocument) != null ? _b : null
   };
 };
@@ -701,8 +719,7 @@ var runAgentLoop = async ({
     const prompt = buildPrompt2(history);
     const assistantMessage = {
       role: "assistant",
-      text: "",
-      rawText: ""
+      content: ""
     };
     history.push(assistantMessage);
     (_b = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _b.call(callbacks, assistantMessage);
@@ -713,31 +730,28 @@ var runAgentLoop = async ({
       (delta) => {
         var _a2;
         streamed += delta;
-        assistantMessage.text = streamed;
-        assistantMessage.rawText = streamed;
+        assistantMessage.content = streamed;
         (_a2 = callbacks == null ? void 0 : callbacks.onAssistantDelta) == null ? void 0 : _a2.call(callbacks, delta, streamed);
       },
       { signal }
     );
     lastResponse = response;
     (_d = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _d.call(callbacks, response.header);
-    assistantMessage.text = response.text;
-    assistantMessage.rawText = response.text;
-    assistantMessage.header = response.header ? `STATE: ${response.header.state}` : void 0;
+    assistantMessage.content = response.text;
     const extracted = extractFencedToolCall(response.text);
     if (extracted && !isExtractionError(extracted)) {
       const toolCallInfo = {
         name: extracted.toolCall.name,
         arguments: (_e = extracted.toolCall.arguments) != null ? _e : {}
       };
-      assistantMessage.toolCalls = [toolCallInfo];
+      assistantMessage.tool_calls = [toolCallInfo];
     }
     if (!extracted) break;
     if (isExtractionError(extracted)) {
       (_f = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _f.call(callbacks, { error: extracted.error });
       const errorMessage = {
         role: "user",
-        text: `ERROR: ${extracted.error}
+        content: `ERROR: ${extracted.error}
 
 Please try again with exactly ONE tool block.`
       };
@@ -752,9 +766,9 @@ Please try again with exactly ONE tool block.`
     (_h = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _h.call(callbacks, { name: executed.name, result: executed.result });
     const toolResultMessage = {
       role: "tool",
-      text: typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2),
-      toolResult: executed.result,
-      toolCallId: `${turn}-${executed.name}`
+      content: typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2),
+      tool_result: executed.result,
+      tool_call_id: `${turn}-${executed.name}`
     };
     history.push(toolResultMessage);
     (_i = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _i.call(callbacks, toolResultMessage);
@@ -776,7 +790,6 @@ var buildConversationHistory = (messages, maxChars, opts) => {
   var _a, _b, _c, _d, _e, _f, _g, _h;
   if (maxChars <= 0) return "[]";
   const excludeLatestUserMessage = (_a = opts == null ? void 0 : opts.excludeLatestUserMessage) != null ? _a : false;
-  const entries = [];
   let startIndex = messages.length - 1;
   if (excludeLatestUserMessage && ((_b = messages[startIndex]) == null ? void 0 : _b.role) === "user") {
     startIndex -= 1;
@@ -788,28 +801,28 @@ var buildConversationHistory = (messages, maxChars, opts) => {
     if (!msg) continue;
     let entry;
     if (msg.role === "user") {
-      const content = ((_c = msg.text) == null ? void 0 : _c.trim()) || "";
+      const content = ((_c = msg.content) == null ? void 0 : _c.trim()) || "";
       if (!content) continue;
       entry = { role: "user", content };
     } else if (msg.role === "assistant") {
-      const base = stripToolBlocks((_d = msg.text) != null ? _d : "").trim();
+      const base = stripToolBlocks((_d = msg.content) != null ? _d : "").trim();
       const content = stripLeakedHeaders(stripThinkBlocks(base));
       entry = { role: "assistant", content: content || "[action]" };
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        entry.tool_calls = msg.toolCalls.map((tc) => ({
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        entry.tool_calls = msg.tool_calls.map((tc) => ({
           name: tc.name,
           arguments: tc.arguments
         }));
       }
     } else if (msg.role === "tool") {
-      const rawContent = ((_e = msg.text) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.toolResult) != null ? _f : "");
-      const toolName = (_h = (_g = msg.toolCallId) == null ? void 0 : _g.split("-").pop()) != null ? _h : "tool";
+      const rawContent = ((_e = msg.content) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.tool_result) != null ? _f : "");
+      const toolName = (_h = (_g = msg.tool_call_id) == null ? void 0 : _g.split("-").pop()) != null ? _h : "tool";
       const content = `[TOOL RESULT: ${toolName}]
 ${rawContent}`;
       entry = {
         role: "tool",
         content,
-        tool_call_id: msg.toolCallId
+        tool_call_id: msg.tool_call_id
       };
     } else {
       continue;
@@ -1034,45 +1047,51 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.renderEditPreview();
   }
   renderMessages() {
+    const isAtBottom = this.transcriptEl.scrollTop + this.transcriptEl.clientHeight >= this.transcriptEl.scrollHeight - 50;
     this.transcriptEl.empty();
     for (const msg of this.messages) {
       const row = this.transcriptEl.createDiv({ cls: ["agentic-chat-row", `role-${msg.role}`] });
       const bubble = row.createDiv({ cls: "agentic-chat-bubble" });
-      const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : "System";
+      const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : msg.role === "tool" ? "System" : "System";
       bubble.createDiv({ cls: "agentic-chat-label", text: label });
-      if (msg.role === "assistant" && msg.header) {
-        const headerToggle = bubble.createDiv({
-          cls: "agentic-chat-header-toggle",
-          text: msg.headerExpanded ? "Header \u25BE" : "Header \u25B8"
-        });
-        headerToggle.addEventListener("click", () => {
-          msg.headerExpanded = !msg.headerExpanded;
-          this.renderMessages();
-        });
-        if (msg.headerExpanded) {
-          bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.header });
-        }
-      }
       if (msg.role === "assistant" && msg.think) {
         const thinkToggle = bubble.createDiv({
           cls: "agentic-chat-header-toggle",
-          text: msg.thinkExpanded ? "Think \u25BE" : "Think \u25B8"
+          text: "Think \u25B8"
         });
+        const thinkContent = bubble.createDiv({ cls: "agentic-chat-header-text" });
+        thinkContent.style.display = "none";
+        thinkContent.setText(msg.think);
         thinkToggle.addEventListener("click", () => {
-          msg.thinkExpanded = !msg.thinkExpanded;
-          this.renderMessages();
+          const isHidden = thinkContent.style.display === "none";
+          thinkContent.style.display = isHidden ? "block" : "none";
+          thinkToggle.setText(isHidden ? "Think \u25BE" : "Think \u25B8");
         });
-        if (msg.thinkExpanded) {
-          bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.think });
-        }
       }
-      const displayText = msg.text && msg.text.trim().length > 0 ? msg.text : msg.role === "assistant" && msg.think ? "(No final answer was produced \u2014 expand Think)" : msg.text;
-      if (msg.role === "assistant" && msg.activityLine) {
-        bubble.createDiv({ cls: "agentic-chat-tool-activity", text: msg.activityLine });
+      const activityLine = this.getMessageActivityLine(msg);
+      if (msg.role === "assistant" && activityLine) {
+        bubble.createDiv({ cls: "agentic-chat-tool-activity", text: activityLine });
       }
+      const displayText = this.getMessageDisplayText(msg);
       bubble.createDiv({ cls: "agentic-chat-text", text: displayText });
     }
-    this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    if (isAtBottom) {
+      this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    }
+  }
+  getMessageActivityLine(msg) {
+    var _a;
+    if (!((_a = msg.tool_calls) == null ? void 0 : _a.length)) return null;
+    return formatToolActivity(msg.tool_calls[0]);
+  }
+  getMessageDisplayText(msg) {
+    var _a;
+    const content = ((_a = msg.content) == null ? void 0 : _a.trim()) || "";
+    if (content.length > 0) return content;
+    if (msg.role === "assistant" && msg.think) {
+      return "(No final answer was produced \u2014 expand Think)";
+    }
+    return content;
   }
   updateControls() {
     const trimmed = this.inputEl.value.trim();
@@ -1132,40 +1151,29 @@ ${pending.preview.after}`);
     }
     this.editPreviewWrapper.show();
   }
-  pushMessage(role, text, header) {
-    this.messages.push({ role, text, header, headerExpanded: false });
+  pushMessage(role, content) {
+    this.messages.push({ role, content });
     this.renderMessages();
   }
-  updateLastAssistantMessage(text) {
+  updateLastAssistantMessage(rawText) {
+    var _a;
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === "assistant") {
-      last.rawText = text;
-      const extracted = extractFencedToolCall(text);
-      this.activityLine = extracted && !isExtractionError(extracted) ? formatToolActivity(extracted.toolCall) : null;
-      last.activityLine = this.activityLine;
-      const withoutToolBlocks = stripToolBlocks(text);
+      const extracted = extractFencedToolCall(rawText);
+      if (extracted && !isExtractionError(extracted)) {
+        last.tool_calls = [{
+          name: extracted.toolCall.name,
+          arguments: (_a = extracted.toolCall.arguments) != null ? _a : {}
+        }];
+      }
+      const withoutToolBlocks = stripToolBlocks(rawText);
       const { think, rest } = extractThink(withoutToolBlocks);
       if (think) {
         last.think = think;
-        if (typeof last.thinkExpanded !== "boolean") last.thinkExpanded = false;
       }
-      const { header, body } = extractHeaderAndBody(rest);
+      const { body } = extractHeaderAndBody(rest);
       const { final } = extractFinal(body);
-      if (header) {
-        last.header = header;
-        const chosen = final != null ? final : body;
-        last.text = chosen;
-      } else if (this.parsedHeader) {
-        last.header = `STATE: ${this.parsedHeader.state}
-NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
-        const { final: finalFromRest } = extractFinal(rest);
-        const chosen = finalFromRest != null ? finalFromRest : rest;
-        last.text = chosen;
-      } else {
-        const { final: finalFromRest } = extractFinal(rest);
-        const chosen = finalFromRest != null ? finalFromRest : rest;
-        last.text = chosen;
-      }
+      last.content = final != null ? final : body;
     }
     this.renderMessages();
   }
@@ -1195,7 +1203,7 @@ NEEDS_CONFIRMATION: ${this.parsedHeader.needsConfirmation}`;
       const buildChatPrompt = (history) => {
         var _a;
         const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
-        const userMessage = (_a = lastUserMsg == null ? void 0 : lastUserMsg.text) != null ? _a : "";
+        const userMessage = (_a = lastUserMsg == null ? void 0 : lastUserMsg.content) != null ? _a : "";
         const fixed = buildPrompt({
           userMessage,
           settings: this.settings,
