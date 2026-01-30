@@ -3,13 +3,27 @@ import type { DerivedState, MessageSegment } from './types';
 
 /**
  * Extracts the first <think>...</think> block from model output.
+ * Handles malformed output where model only outputs </think> without opening tag.
  */
 export const extractThink = (text: string): { think: string | null; rest: string } => {
+  // Try proper <think>...</think> first
   const match = text.match(/<think>([\s\S]*?)<\/think>/i);
-  if (!match) return { think: null, rest: text };
-  const think = match[1].trim();
-  const rest = (text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)).trim();
-  return { think: think || null, rest };
+  if (match) {
+    const think = match[1].trim();
+    const rest = (text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)).trim();
+    return { think: think || null, rest };
+  }
+  
+  // Handle malformed: model only output </think> without opening tag
+  // Everything before </think> is the think content
+  const closingIdx = text.indexOf('</think>');
+  if (closingIdx !== -1) {
+    const think = text.slice(0, closingIdx).trim();
+    const rest = text.slice(closingIdx + 8).trim(); // 8 = '</think>'.length
+    return { think: think || null, rest };
+  }
+  
+  return { think: null, rest: text };
 };
 
 /**

@@ -78,32 +78,19 @@ export const renderMessages = (
     if (msg.role === 'assistant' && msg.segments && msg.segments.length > 0) {
       renderSegments(bubble, msg.segments);
     } else {
-      // Fallback to legacy single-text rendering
-      let displayText =
-        msg.text && msg.text.trim().length > 0
-          ? msg.text
-          : msg.role === 'assistant' && msg.think
-            ? '(No final answer was produced — expand Think)'
-            : msg.text;
+      // Fallback: use content directly
+      let displayText = msg.content?.trim() ?? '';
       
-      // If STILL empty, show content or rawText as last resort
-      if ((!displayText || !displayText.trim()) && msg.role === 'assistant') {
-        if (msg.content && msg.content.trim()) {
-          displayText = msg.content;
-        } else if (msg.rawText && msg.rawText.trim()) {
-          displayText = '(Parsing error — raw output below)';
-          bubble.createDiv({ cls: 'agentic-chat-text agentic-chat-muted', text: displayText });
-          const rawContainer = bubble.createDiv({ cls: 'agentic-chat-raw-fallback' });
-          rawContainer.createEl('pre', { text: msg.rawText.slice(0, 500) + (msg.rawText.length > 500 ? '...' : '') });
-          return; // Skip normal text rendering
-        }
+      // If empty and has think, show hint
+      if (!displayText && msg.role === 'assistant' && msg.think) {
+        displayText = '(No final answer was produced — expand Think)';
       }
 
       if (msg.role === 'assistant' && msg.activityLine) {
         bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
       }
 
-      bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
+      bubble.createDiv({ cls: 'agentic-chat-text', text: displayText || msg.content });
     }
   });
   
@@ -216,8 +203,8 @@ export const updateLastAssistantMessage = (
   const last = messages[messages.length - 1];
   if (!last || last.role !== 'assistant') return null;
 
-  // Persist raw model output for debugging
-  last.rawText = text;
+  // Store raw content for API/history
+  last.content = text;
 
   // Parse segments for agentic display
   last.segments = parseMessageSegments(text);
@@ -236,20 +223,14 @@ export const updateLastAssistantMessage = (
     if (typeof last.thinkExpanded !== 'boolean') last.thinkExpanded = false;
   }
 
-  // Extract header and body
+  // Extract header and body (for legacy header display)
   const { header, body } = extractHeaderAndBody(rest);
   const { final } = extractFinal(body);
   
   if (header) {
     last.header = header;
-    last.text = final ?? body;
   } else if (parsedHeader) {
     last.header = `STATE: ${parsedHeader.state}\nNEEDS_CONFIRMATION: ${parsedHeader.needsConfirmation}`;
-    const { final: finalFromRest } = extractFinal(rest);
-    last.text = finalFromRest ?? rest;
-  } else {
-    const { final: finalFromRest } = extractFinal(rest);
-    last.text = finalFromRest ?? rest;
   }
 
   return activityLine;
@@ -264,5 +245,5 @@ export const pushMessage = (
   content: string,
   header?: string
 ): void => {
-  messages.push({ role, content, text: content, header, headerExpanded: false });
+  messages.push({ role, content, header, headerExpanded: false });
 };

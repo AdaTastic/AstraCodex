@@ -955,10 +955,18 @@ ${rawContent}`;
 var extractThink = (text) => {
   var _a;
   const match = text.match(/<think>([\s\S]*?)<\/think>/i);
-  if (!match) return { think: null, rest: text };
-  const think = match[1].trim();
-  const rest = (text.slice(0, match.index) + text.slice(((_a = match.index) != null ? _a : 0) + match[0].length)).trim();
-  return { think: think || null, rest };
+  if (match) {
+    const think = match[1].trim();
+    const rest = (text.slice(0, match.index) + text.slice(((_a = match.index) != null ? _a : 0) + match[0].length)).trim();
+    return { think: think || null, rest };
+  }
+  const closingIdx = text.indexOf("</think>");
+  if (closingIdx !== -1) {
+    const think = text.slice(0, closingIdx).trim();
+    const rest = text.slice(closingIdx + 8).trim();
+    return { think: think || null, rest };
+  }
+  return { think: null, rest: text };
 };
 var extractHeaderAndBody = (text) => {
   const lines = text.split(/\r?\n/);
@@ -1072,7 +1080,7 @@ var renderMessages = (messages, transcriptEl, onToggleHeader, onToggleThink, opt
   const isAtBottom = transcriptEl.scrollTop + transcriptEl.clientHeight >= transcriptEl.scrollHeight - 50;
   transcriptEl.empty();
   messages.forEach((msg, index) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     const row = transcriptEl.createDiv({ cls: ["agentic-chat-row", `role-${msg.role}`] });
     const bubble = row.createDiv({ cls: "agentic-chat-bubble" });
     const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : "System";
@@ -1118,22 +1126,14 @@ var renderMessages = (messages, transcriptEl, onToggleHeader, onToggleThink, opt
     if (msg.role === "assistant" && msg.segments && msg.segments.length > 0) {
       renderSegments(bubble, msg.segments);
     } else {
-      let displayText = msg.text && msg.text.trim().length > 0 ? msg.text : msg.role === "assistant" && msg.think ? "(No final answer was produced \u2014 expand Think)" : msg.text;
-      if ((!displayText || !displayText.trim()) && msg.role === "assistant") {
-        if (msg.content && msg.content.trim()) {
-          displayText = msg.content;
-        } else if (msg.rawText && msg.rawText.trim()) {
-          displayText = "(Parsing error \u2014 raw output below)";
-          bubble.createDiv({ cls: "agentic-chat-text agentic-chat-muted", text: displayText });
-          const rawContainer = bubble.createDiv({ cls: "agentic-chat-raw-fallback" });
-          rawContainer.createEl("pre", { text: msg.rawText.slice(0, 500) + (msg.rawText.length > 500 ? "..." : "") });
-          return;
-        }
+      let displayText = (_e = (_d = msg.content) == null ? void 0 : _d.trim()) != null ? _e : "";
+      if (!displayText && msg.role === "assistant" && msg.think) {
+        displayText = "(No final answer was produced \u2014 expand Think)";
       }
       if (msg.role === "assistant" && msg.activityLine) {
         bubble.createDiv({ cls: "agentic-chat-tool-activity", text: msg.activityLine });
       }
-      bubble.createDiv({ cls: "agentic-chat-text", text: displayText });
+      bubble.createDiv({ cls: "agentic-chat-text", text: displayText || msg.content });
     }
   });
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -1210,7 +1210,7 @@ var renderToolResult = (container, result) => {
 var updateLastAssistantMessage = (messages, text, parsedHeader) => {
   const last = messages[messages.length - 1];
   if (!last || last.role !== "assistant") return null;
-  last.rawText = text;
+  last.content = text;
   last.segments = parseMessageSegments(text);
   const activityLine = getActivityLine(text, formatToolActivity);
   last.activityLine = activityLine;
@@ -1224,20 +1224,14 @@ var updateLastAssistantMessage = (messages, text, parsedHeader) => {
   const { final } = extractFinal(body);
   if (header) {
     last.header = header;
-    last.text = final != null ? final : body;
   } else if (parsedHeader) {
     last.header = `STATE: ${parsedHeader.state}
 NEEDS_CONFIRMATION: ${parsedHeader.needsConfirmation}`;
-    const { final: finalFromRest } = extractFinal(rest);
-    last.text = finalFromRest != null ? finalFromRest : rest;
-  } else {
-    const { final: finalFromRest } = extractFinal(rest);
-    last.text = finalFromRest != null ? finalFromRest : rest;
   }
   return activityLine;
 };
 var pushMessage = (messages, role, content, header) => {
-  messages.push({ role, content, text: content, header, headerExpanded: false });
+  messages.push({ role, content, header, headerExpanded: false });
 };
 
 // view.ts
