@@ -160,6 +160,7 @@ export const parseMessageSegments = (rawText: string): MessageSegment[] => {
 
     // Parse the tool block (check both capture groups)
     const toolJson = (match[1] ?? match[2])?.trim();
+    const rawToolBlock = match[0]; // Full matched tool block for "Show Raw" feature
     if (toolJson) {
       try {
         const parsed = JSON.parse(toolJson) as ToolCall;
@@ -168,11 +169,18 @@ export const parseMessageSegments = (rawText: string): MessageSegment[] => {
           segments.push({
             type: 'tool',
             activity,
-            toolName: parsed.name
+            toolName: parsed.name,
+            rawText: rawToolBlock
           });
         }
       } catch {
-        // Invalid JSON - skip this tool block
+        // Invalid JSON - show raw text for debugging
+        segments.push({
+          type: 'tool',
+          activity: '⚠️ malformed tool call',
+          toolName: 'unknown',
+          rawText: rawToolBlock
+        });
       }
     }
 

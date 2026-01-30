@@ -234,8 +234,9 @@
 
 .agentic-chat-tool-activity {
   font-size: 0.8rem;
-  color: var(--text-accent);
+  color: var(--text-normal);
   font-family: var(--font-monospace);
+  font-weight: 500;
   flex: 1;
 }
 
@@ -314,4 +315,59 @@
 .agentic-chat-error-result {
   color: var(--text-error, #e55);
   font-size: 0.75rem;
+}
+
+/* Toggle buttons container */
+.agentic-chat-tool-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+/* Raw tool text container */
+.agentic-chat-tool-raw-container {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.agentic-chat-tool-raw {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+.agentic-chat-tool-raw pre {
+  margin: 0;
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
+/* Raw fallback for parsing errors */
+.agentic-chat-raw-fallback {
+  margin-top: 8px;
+  background: var(--background-modifier-error-rgb, rgba(255,0,0,0.05));
+  border: 1px solid var(--text-error, #e55);
+  border-radius: 4px;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.agentic-chat-raw-fallback pre {
+  margin: 0;
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
+/* Muted text */
+.agentic-chat-muted {
+  color: var(--text-muted);
+  font-style: italic;
 }

@@ -39,7 +39,7 @@ export interface ToolResultDisplay {
  */
 export type MessageSegment =
   | { type: 'text'; content: string }
-  | { type: 'tool'; activity: string; toolName: string; result?: ToolResultDisplay };
+  | { type: 'tool'; activity: string; toolName: string; rawText?: string; result?: ToolResultDisplay };
 
 /**
  * Tool call in OpenAI format.

@@ -79,12 +79,25 @@ export const renderMessages = (
       renderSegments(bubble, msg.segments);
     } else {
       // Fallback to legacy single-text rendering
-      const displayText =
+      let displayText =
         msg.text && msg.text.trim().length > 0
           ? msg.text
           : msg.role === 'assistant' && msg.think
             ? '(No final answer was produced — expand Think)'
             : msg.text;
+      
+      // If STILL empty, show content or rawText as last resort
+      if ((!displayText || !displayText.trim()) && msg.role === 'assistant') {
+        if (msg.content && msg.content.trim()) {
+          displayText = msg.content;
+        } else if (msg.rawText && msg.rawText.trim()) {
+          displayText = '(Parsing error — raw output below)';
+          bubble.createDiv({ cls: 'agentic-chat-text agentic-chat-muted', text: displayText });
+          const rawContainer = bubble.createDiv({ cls: 'agentic-chat-raw-fallback' });
+          rawContainer.createEl('pre', { text: msg.rawText.slice(0, 500) + (msg.rawText.length > 500 ? '...' : '') });
+          return; // Skip normal text rendering
+        }
+      }
 
       if (msg.role === 'assistant' && msg.activityLine) {
         bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: msg.activityLine });
@@ -114,20 +127,44 @@ const renderSegments = (bubble: HTMLElement, segments: MessageSegment[]): void =
       const headerRow = toolBox.createDiv({ cls: 'agentic-chat-tool-header' });
       headerRow.createDiv({ cls: 'agentic-chat-tool-activity', text: segment.activity });
       
+      // Toggle buttons container
+      const toggleContainer = headerRow.createDiv({ cls: 'agentic-chat-tool-toggles' });
+      
+      // Raw text container (collapsible, collapsed by default)
+      const rawContainer = toolBox.createDiv({ cls: 'agentic-chat-tool-raw-container' });
+      rawContainer.style.display = 'none';
+      
+      // Add raw toggle if rawText exists
+      if (segment.rawText) {
+        const rawToggleBtn = toggleContainer.createDiv({ 
+          cls: 'agentic-chat-tool-toggle',
+          text: '▸ Raw'
+        });
+        
+        rawToggleBtn.addEventListener('click', () => {
+          const isHidden = rawContainer.style.display === 'none';
+          rawContainer.style.display = isHidden ? 'block' : 'none';
+          (rawToggleBtn as any).setText(isHidden ? '▾ Raw' : '▸ Raw');
+        });
+        
+        const rawEl = rawContainer.createDiv({ cls: 'agentic-chat-tool-raw' });
+        rawEl.createEl('pre', { text: segment.rawText });
+      }
+      
       // Tool result (collapsible, collapsed by default)
       if (segment.result) {
         const resultContainer = toolBox.createDiv({ cls: 'agentic-chat-tool-result-container' });
         resultContainer.style.display = 'none'; // Collapsed by default
         
-        const toggleBtn = headerRow.createDiv({ 
+        const toggleBtn = toggleContainer.createDiv({ 
           cls: 'agentic-chat-tool-toggle',
-          text: '▸ Show'
+          text: '▸ Result'
         });
         
         toggleBtn.addEventListener('click', () => {
           const isHidden = resultContainer.style.display === 'none';
           resultContainer.style.display = isHidden ? 'block' : 'none';
-          toggleBtn.setText(isHidden ? '▾ Hide' : '▸ Show');
+          (toggleBtn as any).setText(isHidden ? '▾ Result' : '▸ Result');
         });
         
         renderToolResult(resultContainer, segment.result);
