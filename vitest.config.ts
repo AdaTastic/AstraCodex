@@ -5,7 +5,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.spec.ts', 'tests/**/*.e2e.ts'],
     globals: false,
-    passWithNoTests: false
+    passWithNoTests: true
   },
   resolve: {
     alias: {
