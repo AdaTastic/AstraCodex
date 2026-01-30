@@ -7,16 +7,15 @@ import { StateMachine } from './stateMachine';
 import { ModelClient } from './modelClient';
 import { ToolRunner } from './toolRunner';
 import { ToolRegistry } from './toolRegistry';
-import { ChatStore, ChatMeta, ChatRecord } from './chatStore';
+import { ChatStore, ChatMeta } from './chatStore';
 import { mergeChatSettings, restoreChatState } from './chatSession';
-import { deriveChatTitle } from './chatTitle';
+import * as ChatManager from './chatManager';
 import { runAgentLoop } from './agentLoop';
-import { extractFencedToolCall, formatToolActivity, stripToolBlocks, isExtractionError } from './toolOrchestrator';
+import { extractFencedToolCall, isExtractionError } from './toolOrchestrator';
 import { buildConversationHistory } from './conversationHistory';
 // Extracted modules
-import { extractThink, extractHeaderAndBody, extractFinal, extractLastReadPath, parseStateFromHeader } from './textParser';
+import { extractHeaderAndBody, extractLastReadPath } from './textParser';
 import { renderMessages as renderMessagesUtil, updateLastAssistantMessage as updateLastAssistantMessageUtil, pushMessage as pushMessageUtil } from './messageRenderer';
-import * as ChatManager from './chatManager';
 
 export const VIEW_TYPE_AGENTIC_CHAT = 'agentic-chat-view';
 const LOADING_TIMEOUT_MS = 20000;
@@ -39,7 +38,6 @@ export class AgenticChatView extends ItemView {
   private confirmWrapper!: HTMLDivElement;
   private confirmBtn!: HTMLButtonElement;
   private loadedRules: Record<string, string> = {};
-  private activityLine: string | null = null;
   private loading = false;
   private loadingTimer: number | null = null;
   private abortController: AbortController | null = null;
@@ -212,61 +210,30 @@ export class AgenticChatView extends ItemView {
   }
 
   private renderMessages() {
-    // Remember scroll position before re-render
-    const isAtBottom = this.transcriptEl.scrollTop + this.transcriptEl.clientHeight >= this.transcriptEl.scrollHeight - 50;
-    
-    (this.transcriptEl as any).empty();
-    for (const msg of this.messages) {
-      const row = (this.transcriptEl as any).createDiv({ cls: ['agentic-chat-row', `role-${msg.role}`] });
-      const bubble = row.createDiv({ cls: 'agentic-chat-bubble' });
-      const label = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : msg.role === 'tool' ? 'System' : 'System';
-      bubble.createDiv({ cls: 'agentic-chat-label', text: label });
+    // Use the shared messageRenderer module for consistent rendering
+    renderMessagesUtil(
+      this.messages,
+      this.transcriptEl,
+      (index) => this.handleToggleHeader(index),
+      (index) => this.handleToggleThink(index),
+      { preserveScroll: true }
+    );
+  }
 
-      // Show think toggle for assistant messages with reasoning
-      if (msg.role === 'assistant' && msg.think) {
-        const thinkToggle = bubble.createDiv({
-          cls: 'agentic-chat-header-toggle',
-          text: 'Think ▸'
-        });
-        const thinkContent = bubble.createDiv({ cls: 'agentic-chat-header-text' });
-        thinkContent.style.display = 'none';
-        thinkContent.setText(msg.think);
-        
-        thinkToggle.addEventListener('click', () => {
-          const isHidden = thinkContent.style.display === 'none';
-          thinkContent.style.display = isHidden ? 'block' : 'none';
-          thinkToggle.setText(isHidden ? 'Think ▾' : 'Think ▸');
-        });
-      }
-
-      // Derive activity line from tool_calls (not stored)
-      const activityLine = this.getMessageActivityLine(msg);
-      if (msg.role === 'assistant' && activityLine) {
-        bubble.createDiv({ cls: 'agentic-chat-tool-activity', text: activityLine });
-      }
-
-      const displayText = this.getMessageDisplayText(msg);
-      bubble.createDiv({ cls: 'agentic-chat-text', text: displayText });
-    }
-    
-    // Only auto-scroll if user was already at the bottom
-    if (isAtBottom) {
-      this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+  private handleToggleHeader(index: number) {
+    const msg = this.messages[index];
+    if (msg) {
+      msg.headerExpanded = !msg.headerExpanded;
+      this.renderMessages();
     }
   }
 
-  private getMessageActivityLine(msg: Message): string | null {
-    if (!msg.tool_calls?.length) return null;
-    return formatToolActivity(msg.tool_calls[0]);
-  }
-
-  private getMessageDisplayText(msg: Message): string {
-    const content = msg.content?.trim() || '';
-    if (content.length > 0) return content;
-    if (msg.role === 'assistant' && msg.think) {
-      return '(No final answer was produced — expand Think)';
+  private handleToggleThink(index: number) {
+    const msg = this.messages[index];
+    if (msg) {
+      msg.thinkExpanded = !msg.thinkExpanded;
+      this.renderMessages();
     }
-    return content;
   }
 
   private updateControls() {
@@ -330,14 +297,17 @@ export class AgenticChatView extends ItemView {
   }
 
   private pushMessage(role: Message['role'], content: string) {
-    this.messages.push({ role, content });
+    pushMessageUtil(this.messages, role, content);
     this.renderMessages();
   }
 
   private updateLastAssistantMessage(rawText: string) {
+    // Use messageRenderer's comprehensive parsing (sets segments, activityLine, text, etc.)
+    updateLastAssistantMessageUtil(this.messages, rawText, this.parsedHeader);
+    
+    // Also extract tool_calls for the agent loop
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === 'assistant') {
-      // Extract tool calls
       const extracted = extractFencedToolCall(rawText);
       if (extracted && !isExtractionError(extracted)) {
         last.tool_calls = [{
@@ -345,18 +315,6 @@ export class AgenticChatView extends ItemView {
           arguments: extracted.toolCall.arguments ?? {}
         }];
       }
-
-      // Extract thinking
-      const withoutToolBlocks = stripToolBlocks(rawText);
-      const { think, rest } = extractThink(withoutToolBlocks);
-      if (think) {
-        last.think = think;
-      }
-
-      // Extract final content (strip STATE headers)
-      const { body } = extractHeaderAndBody(rest);
-      const { final } = extractFinal(body);
-      last.content = final ?? body;
     }
     this.renderMessages();
   }
@@ -532,24 +490,13 @@ export class AgenticChatView extends ItemView {
   }
 
   private async loadChatIndex() {
-    this.chatIndex = await this.chatStore.loadIndex();
-    if (this.chatIndex.length === 0) {
-      const record = this.chatStore.createChat('New Chat', this.settings);
-      await this.chatStore.saveChat(record);
-      this.chatIndex = [record.meta];
-    }
-    const active = this.chatIndex[0];
-    await this.switchChat(active.id);
+    const { index, firstChatId } = await ChatManager.loadChatIndex(this.chatStore, this.settings);
+    this.chatIndex = index;
+    await this.switchChat(firstChatId);
   }
 
   private renderChatOptions() {
-    this.chatSelect.empty();
-    this.chatIndex.forEach((chat) => {
-      const option = this.chatSelect.createEl('option', { text: chat.title, value: chat.id });
-      if (chat.id === this.activeChatId) {
-        option.selected = true;
-      }
-    });
+    ChatManager.renderChatOptions(this.chatSelect, this.chatIndex, this.activeChatId);
   }
 
   private async switchChat(chatId: string) {
@@ -570,16 +517,14 @@ export class AgenticChatView extends ItemView {
   }
 
   private async createNewChat() {
-    const record = this.chatStore.createChat('New Chat', this.settings);
-    await this.chatStore.saveChat(record);
-    this.chatIndex = await this.chatStore.loadIndex();
-    await this.switchChat(record.meta.id);
+    const { index, newChatId } = await ChatManager.createNewChat(this.chatStore, this.settings);
+    this.chatIndex = index;
+    await this.switchChat(newChatId);
   }
 
   private async deleteCurrentChat() {
     if (!this.activeChatId) return;
-    await this.chatStore.deleteChat(this.activeChatId);
-    this.chatIndex = await this.chatStore.loadIndex();
+    this.chatIndex = await ChatManager.deleteChat(this.chatStore, this.activeChatId);
     if (this.chatIndex.length === 0) {
       await this.createNewChat();
       return;
@@ -595,23 +540,17 @@ export class AgenticChatView extends ItemView {
 
   private async saveActiveChat() {
     if (!this.activeChatId) return;
-    const record: ChatRecord = {
-      meta: {
-        id: this.activeChatId,
-        title: this.chatIndex.find((chat) => chat.id === this.activeChatId)?.title ?? 'Chat',
-        createdAt: this.chatIndex.find((chat) => chat.id === this.activeChatId)?.createdAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
+    this.chatIndex = await ChatManager.saveChat(this.chatStore, {
+      activeChatId: this.activeChatId,
+      chatIndex: this.chatIndex,
       settings: this.settings,
-      state: { header: this.parsedHeader, state: this.stateMachine.state },
-      messages: this.messages
-    };
-    await this.chatStore.saveChat(record);
-    this.chatIndex = await this.chatStore.loadIndex();
+      parsedHeader: this.parsedHeader,
+      stateMachineState: this.stateMachine.state,
+      messages: this.messages,
+      lastDocument: null
+    });
     this.renderChatOptions();
   }
-
-  // Legacy fixed-line header extractor removed; we now parse keys directly.
 
   updateSettings(settings: AstraCodexSettings) {
     // Global settings update (model/baseUrl/etc). Keep current chat's non-global overrides.
@@ -622,29 +561,26 @@ export class AgenticChatView extends ItemView {
   }
 
   private async ensureChatNamed(firstUserMessage: string) {
-    if (!this.activeChatId) return;
-    if (this.hasNamedActiveChat) return;
-
-    const title = deriveChatTitle(firstUserMessage, 50);
-    const meta = this.chatIndex.find((c) => c.id === this.activeChatId);
-    if (!meta) return;
-    if (meta.title === title) {
-      this.hasNamedActiveChat = true;
-      return;
-    }
-    meta.title = title;
-    meta.updatedAt = new Date().toISOString();
-    await this.chatStore.saveIndex(this.chatIndex);
-    this.hasNamedActiveChat = true;
+    const result = await ChatManager.ensureChatNamed(
+      this.chatStore,
+      this.chatIndex,
+      this.activeChatId,
+      this.hasNamedActiveChat,
+      firstUserMessage
+    );
+    this.chatIndex = result.chatIndex;
+    this.hasNamedActiveChat = result.hasNamedActiveChat;
     this.renderChatOptions();
   }
 
   private async loadStateConfiguration() {
     const core = await this.ruleManager.loadCore();
     const parsed = this.parseStates(core.states);
-    const allowed = parsed.allowedStates.length ? parsed.allowedStates : ['idle', 'thinking', 'acting'];
+    // Always include base states to prevent "Invalid state" errors
+    const baseStates = ['idle', 'thinking', 'acting', 'completed'];
+    const allowed = [...new Set([...baseStates, ...parsed.allowedStates])];
     this.stateMap = parsed.stateMap;
-    this.stateMachine = new StateMachine(allowed, allowed[0], this.stateMap);
+    this.stateMachine = new StateMachine(allowed, 'idle', this.stateMap);
   }
 
   private parseStates(statesText: string): { allowedStates: string[]; stateMap: Record<string, string> } {

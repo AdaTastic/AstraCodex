@@ -629,6 +629,69 @@ var deriveChatTitle = (firstUserMessage, maxLen = 40) => {
   return `${normalized.slice(0, Math.max(0, maxLen - 1)).trimEnd()}\u2026`;
 };
 
+// chatManager.ts
+var loadChatIndex = async (chatStore, settings) => {
+  let index = await chatStore.loadIndex();
+  if (index.length === 0) {
+    const record = chatStore.createChat("New Chat", settings);
+    await chatStore.saveChat(record);
+    index = [record.meta];
+  }
+  return { index, firstChatId: index[0].id };
+};
+var createNewChat = async (chatStore, settings) => {
+  const record = chatStore.createChat("New Chat", settings);
+  await chatStore.saveChat(record);
+  const index = await chatStore.loadIndex();
+  return { index, newChatId: record.meta.id };
+};
+var deleteChat = async (chatStore, chatId) => {
+  await chatStore.deleteChat(chatId);
+  return chatStore.loadIndex();
+};
+var saveChat = async (chatStore, state) => {
+  var _a, _b;
+  const meta = state.chatIndex.find((chat) => chat.id === state.activeChatId);
+  if (!meta) return state.chatIndex;
+  const record = {
+    meta: {
+      id: state.activeChatId,
+      title: (_a = meta.title) != null ? _a : "Chat",
+      createdAt: (_b = meta.createdAt) != null ? _b : (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    },
+    settings: state.settings,
+    state: { header: state.parsedHeader, state: state.stateMachineState },
+    messages: state.messages,
+    lastDocument: state.lastDocument
+  };
+  await chatStore.saveChat(record);
+  return chatStore.loadIndex();
+};
+var ensureChatNamed = async (chatStore, chatIndex, activeChatId, hasNamedActiveChat, firstUserMessage) => {
+  if (!activeChatId) return { chatIndex, hasNamedActiveChat };
+  if (hasNamedActiveChat) return { chatIndex, hasNamedActiveChat };
+  const title = deriveChatTitle(firstUserMessage, 50);
+  const meta = chatIndex.find((c) => c.id === activeChatId);
+  if (!meta) return { chatIndex, hasNamedActiveChat };
+  if (meta.title === title) {
+    return { chatIndex, hasNamedActiveChat: true };
+  }
+  meta.title = title;
+  meta.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await chatStore.saveIndex(chatIndex);
+  return { chatIndex, hasNamedActiveChat: true };
+};
+var renderChatOptions = (chatSelect, chatIndex, activeChatId) => {
+  chatSelect.empty();
+  chatIndex.forEach((chat) => {
+    const option = chatSelect.createEl("option", { text: chat.title, value: chat.id });
+    if (chat.id === activeChatId) {
+      option.selected = true;
+    }
+  });
+};
+
 // toolOrchestrator.ts
 var isExtractionError = (result) => {
   return result !== null && "error" in result;
@@ -936,6 +999,211 @@ var extractLastReadPath = (text) => {
     return null;
   }
 };
+var getActivityLine = (text, formatFn) => {
+  const extracted = extractFencedToolCall(text);
+  if (!extracted || isExtractionError(extracted)) return null;
+  return formatFn(extracted.toolCall);
+};
+var parseMessageSegments = (rawText) => {
+  var _a, _b;
+  const segments = [];
+  const toolBlockRegex = /```tool\s*([\s\S]*?)```|<tool_call>(?:tool\s*)?([\s\S]*?)<\/tool_call>/gi;
+  let lastIndex = 0;
+  let match;
+  while ((match = toolBlockRegex.exec(rawText)) !== null) {
+    const textBefore = rawText.slice(lastIndex, match.index).trim();
+    if (textBefore) {
+      const cleanedText = cleanSegmentText(textBefore);
+      if (cleanedText) {
+        segments.push({ type: "text", content: cleanedText });
+      }
+    }
+    const toolJson = (_b = (_a = match[1]) != null ? _a : match[2]) == null ? void 0 : _b.trim();
+    if (toolJson) {
+      try {
+        const parsed = JSON.parse(toolJson);
+        if (parsed == null ? void 0 : parsed.name) {
+          const activity = formatToolActivity(parsed);
+          segments.push({
+            type: "tool",
+            activity,
+            toolName: parsed.name
+          });
+        }
+      } catch (e) {
+      }
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  const textAfter = rawText.slice(lastIndex).trim();
+  if (textAfter) {
+    const cleanedText = cleanSegmentText(textAfter);
+    if (cleanedText) {
+      segments.push({ type: "text", content: cleanedText });
+    }
+  }
+  return segments;
+};
+var cleanSegmentText = (text) => {
+  let cleaned = text;
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  cleaned = cleaned.replace(/^[\s\S]*?<\/think>/i, "");
+  cleaned = cleaned.replace(/<tool_call>(?:tool\s*)?[\s\S]*?<\/tool_call>/gi, "");
+  cleaned = cleaned.replace(/<tool_call>(?:tool\s*)?\{[\s\S]*?\}(?=\s|$|<)/gi, "");
+  cleaned = cleaned.replace(/<\/?tool_call>/gi, "");
+  cleaned = cleaned.replace(/^STATE:\s*\S+\s*/gim, "");
+  cleaned = cleaned.replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, "");
+  cleaned = cleaned.replace(/^FINAL:\s*/gim, "");
+  cleaned = cleaned.replace(/^TOOL CALLS:\s*/gim, "");
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
+  return cleaned;
+};
+
+// messageRenderer.ts
+var renderMessages = (messages, transcriptEl, onToggleHeader, onToggleThink, options) => {
+  const isAtBottom = transcriptEl.scrollTop + transcriptEl.clientHeight >= transcriptEl.scrollHeight - 50;
+  transcriptEl.empty();
+  messages.forEach((msg, index) => {
+    var _a, _b, _c;
+    const row = transcriptEl.createDiv({ cls: ["agentic-chat-row", `role-${msg.role}`] });
+    const bubble = row.createDiv({ cls: "agentic-chat-bubble" });
+    const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : "System";
+    bubble.createDiv({ cls: "agentic-chat-label", text: label });
+    if (msg.role === "tool") {
+      const toolHeader = bubble.createDiv({ cls: "agentic-chat-tool-header" });
+      const toolName = (_b = (_a = msg.tool_call_id) == null ? void 0 : _a.split("-").pop()) != null ? _b : "tool";
+      toolHeader.createDiv({ cls: "agentic-chat-tool-activity", text: `${toolName} result` });
+      const toggleBtn = toolHeader.createDiv({
+        cls: "agentic-chat-tool-toggle",
+        text: "\u25B8 Show"
+      });
+      const resultContainer = bubble.createDiv({ cls: "agentic-chat-tool-result-container" });
+      resultContainer.style.display = "none";
+      resultContainer.createDiv({ cls: "agentic-chat-text", text: (_c = msg.content) != null ? _c : "" });
+      toggleBtn.addEventListener("click", () => {
+        const isHidden = resultContainer.style.display === "none";
+        resultContainer.style.display = isHidden ? "block" : "none";
+        toggleBtn.setText(isHidden ? "\u25BE Hide" : "\u25B8 Show");
+      });
+      return;
+    }
+    if (msg.role === "assistant" && msg.header) {
+      const headerToggle = bubble.createDiv({
+        cls: "agentic-chat-header-toggle",
+        text: msg.headerExpanded ? "Header \u25BE" : "Header \u25B8"
+      });
+      headerToggle.addEventListener("click", () => onToggleHeader(index));
+      if (msg.headerExpanded) {
+        bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.header });
+      }
+    }
+    if (msg.role === "assistant" && msg.think) {
+      const thinkToggle = bubble.createDiv({
+        cls: "agentic-chat-header-toggle",
+        text: msg.thinkExpanded ? "Think \u25BE" : "Think \u25B8"
+      });
+      thinkToggle.addEventListener("click", () => onToggleThink(index));
+      if (msg.thinkExpanded) {
+        bubble.createDiv({ cls: "agentic-chat-header-text", text: msg.think });
+      }
+    }
+    if (msg.role === "assistant" && msg.segments && msg.segments.length > 0) {
+      renderSegments(bubble, msg.segments);
+    } else {
+      const displayText = msg.text && msg.text.trim().length > 0 ? msg.text : msg.role === "assistant" && msg.think ? "(No final answer was produced \u2014 expand Think)" : msg.text;
+      if (msg.role === "assistant" && msg.activityLine) {
+        bubble.createDiv({ cls: "agentic-chat-tool-activity", text: msg.activityLine });
+      }
+      bubble.createDiv({ cls: "agentic-chat-text", text: displayText });
+    }
+  });
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+};
+var renderSegments = (bubble, segments) => {
+  for (const segment of segments) {
+    if (segment.type === "text") {
+      if (segment.content.trim()) {
+        bubble.createDiv({ cls: "agentic-chat-text-segment", text: segment.content });
+      }
+    } else if (segment.type === "tool") {
+      const toolBox = bubble.createDiv({ cls: "agentic-chat-tool-box" });
+      const headerRow = toolBox.createDiv({ cls: "agentic-chat-tool-header" });
+      headerRow.createDiv({ cls: "agentic-chat-tool-activity", text: segment.activity });
+      if (segment.result) {
+        const resultContainer = toolBox.createDiv({ cls: "agentic-chat-tool-result-container" });
+        resultContainer.style.display = "none";
+        const toggleBtn = headerRow.createDiv({
+          cls: "agentic-chat-tool-toggle",
+          text: "\u25B8 Show"
+        });
+        toggleBtn.addEventListener("click", () => {
+          const isHidden = resultContainer.style.display === "none";
+          resultContainer.style.display = isHidden ? "block" : "none";
+          toggleBtn.setText(isHidden ? "\u25BE Hide" : "\u25B8 Show");
+        });
+        renderToolResult(resultContainer, segment.result);
+      }
+    }
+  }
+};
+var renderToolResult = (container, result) => {
+  var _a;
+  const resultEl = container.createDiv({ cls: "agentic-chat-tool-result" });
+  if (result.type === "list" && result.items) {
+    const listEl = resultEl.createDiv({ cls: "agentic-chat-file-list" });
+    const displayItems = result.items.slice(0, 10);
+    for (const item of displayItems) {
+      const isFolder = item.endsWith("/");
+      const icon = isFolder ? "\u{1F4C1}" : "\u{1F4C4}";
+      listEl.createDiv({ cls: "agentic-chat-file-item", text: `\u251C\u2500 ${icon} ${item}` });
+    }
+    if (result.items.length > 10) {
+      listEl.createDiv({ cls: "agentic-chat-file-item", text: `\u2514\u2500 ... and ${result.items.length - 10} more` });
+    }
+  } else if (result.type === "read" && result.path) {
+    resultEl.createDiv({ cls: "agentic-chat-read-result", text: `\u{1F4C4} ${result.path}` });
+    if (result.preview) {
+      const previewEl = resultEl.createDiv({ cls: "agentic-chat-preview" });
+      previewEl.createEl("pre", { text: result.preview.slice(0, 200) + (result.preview.length > 200 ? "..." : "") });
+    }
+  } else if ((result.type === "write" || result.type === "append" || result.type === "line_edit") && result.success) {
+    resultEl.createDiv({ cls: "agentic-chat-write-result", text: `\u2705 ${(_a = result.path) != null ? _a : "File updated"}` });
+  } else if (result.type === "error" && result.error) {
+    resultEl.createDiv({ cls: "agentic-chat-error-result", text: `\u274C ${result.error}` });
+  }
+};
+var updateLastAssistantMessage = (messages, text, parsedHeader) => {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "assistant") return null;
+  last.rawText = text;
+  last.segments = parseMessageSegments(text);
+  const activityLine = getActivityLine(text, formatToolActivity);
+  last.activityLine = activityLine;
+  const withoutToolBlocks = stripToolBlocks(text);
+  const { think, rest } = extractThink(withoutToolBlocks);
+  if (think) {
+    last.think = think;
+    if (typeof last.thinkExpanded !== "boolean") last.thinkExpanded = false;
+  }
+  const { header, body } = extractHeaderAndBody(rest);
+  const { final } = extractFinal(body);
+  if (header) {
+    last.header = header;
+    last.text = final != null ? final : body;
+  } else if (parsedHeader) {
+    last.header = `STATE: ${parsedHeader.state}
+NEEDS_CONFIRMATION: ${parsedHeader.needsConfirmation}`;
+    const { final: finalFromRest } = extractFinal(rest);
+    last.text = finalFromRest != null ? finalFromRest : rest;
+  } else {
+    const { final: finalFromRest } = extractFinal(rest);
+    last.text = finalFromRest != null ? finalFromRest : rest;
+  }
+  return activityLine;
+};
+var pushMessage = (messages, role, content, header) => {
+  messages.push({ role, content, text: content, header, headerExpanded: false });
+};
 
 // view.ts
 var VIEW_TYPE_AGENTIC_CHAT = "agentic-chat-view";
@@ -945,7 +1213,6 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     super(leaf);
     this.messages = [];
     this.loadedRules = {};
-    this.activityLine = null;
     this.loading = false;
     this.loadingTimer = null;
     this.abortController = null;
@@ -1097,51 +1364,27 @@ var AgenticChatView = class extends import_obsidian.ItemView {
     this.renderEditPreview();
   }
   renderMessages() {
-    const isAtBottom = this.transcriptEl.scrollTop + this.transcriptEl.clientHeight >= this.transcriptEl.scrollHeight - 50;
-    this.transcriptEl.empty();
-    for (const msg of this.messages) {
-      const row = this.transcriptEl.createDiv({ cls: ["agentic-chat-row", `role-${msg.role}`] });
-      const bubble = row.createDiv({ cls: "agentic-chat-bubble" });
-      const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : msg.role === "tool" ? "System" : "System";
-      bubble.createDiv({ cls: "agentic-chat-label", text: label });
-      if (msg.role === "assistant" && msg.think) {
-        const thinkToggle = bubble.createDiv({
-          cls: "agentic-chat-header-toggle",
-          text: "Think \u25B8"
-        });
-        const thinkContent = bubble.createDiv({ cls: "agentic-chat-header-text" });
-        thinkContent.style.display = "none";
-        thinkContent.setText(msg.think);
-        thinkToggle.addEventListener("click", () => {
-          const isHidden = thinkContent.style.display === "none";
-          thinkContent.style.display = isHidden ? "block" : "none";
-          thinkToggle.setText(isHidden ? "Think \u25BE" : "Think \u25B8");
-        });
-      }
-      const activityLine = this.getMessageActivityLine(msg);
-      if (msg.role === "assistant" && activityLine) {
-        bubble.createDiv({ cls: "agentic-chat-tool-activity", text: activityLine });
-      }
-      const displayText = this.getMessageDisplayText(msg);
-      bubble.createDiv({ cls: "agentic-chat-text", text: displayText });
-    }
-    if (isAtBottom) {
-      this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+    renderMessages(
+      this.messages,
+      this.transcriptEl,
+      (index) => this.handleToggleHeader(index),
+      (index) => this.handleToggleThink(index),
+      { preserveScroll: true }
+    );
+  }
+  handleToggleHeader(index) {
+    const msg = this.messages[index];
+    if (msg) {
+      msg.headerExpanded = !msg.headerExpanded;
+      this.renderMessages();
     }
   }
-  getMessageActivityLine(msg) {
-    var _a;
-    if (!((_a = msg.tool_calls) == null ? void 0 : _a.length)) return null;
-    return formatToolActivity(msg.tool_calls[0]);
-  }
-  getMessageDisplayText(msg) {
-    var _a;
-    const content = ((_a = msg.content) == null ? void 0 : _a.trim()) || "";
-    if (content.length > 0) return content;
-    if (msg.role === "assistant" && msg.think) {
-      return "(No final answer was produced \u2014 expand Think)";
+  handleToggleThink(index) {
+    const msg = this.messages[index];
+    if (msg) {
+      msg.thinkExpanded = !msg.thinkExpanded;
+      this.renderMessages();
     }
-    return content;
   }
   updateControls() {
     const trimmed = this.inputEl.value.trim();
@@ -1202,11 +1445,12 @@ ${pending.preview.after}`);
     this.editPreviewWrapper.show();
   }
   pushMessage(role, content) {
-    this.messages.push({ role, content });
+    pushMessage(this.messages, role, content);
     this.renderMessages();
   }
   updateLastAssistantMessage(rawText) {
     var _a;
+    updateLastAssistantMessage(this.messages, rawText, this.parsedHeader);
     const last = this.messages[this.messages.length - 1];
     if (last && last.role === "assistant") {
       const extracted = extractFencedToolCall(rawText);
@@ -1216,14 +1460,6 @@ ${pending.preview.after}`);
           arguments: (_a = extracted.toolCall.arguments) != null ? _a : {}
         }];
       }
-      const withoutToolBlocks = stripToolBlocks(rawText);
-      const { think, rest } = extractThink(withoutToolBlocks);
-      if (think) {
-        last.think = think;
-      }
-      const { body } = extractHeaderAndBody(rest);
-      const { final } = extractFinal(body);
-      last.content = final != null ? final : body;
     }
     this.renderMessages();
   }
@@ -1369,23 +1605,12 @@ ${pending.preview.after}`);
     this.renderEditPreview();
   }
   async loadChatIndex() {
-    this.chatIndex = await this.chatStore.loadIndex();
-    if (this.chatIndex.length === 0) {
-      const record = this.chatStore.createChat("New Chat", this.settings);
-      await this.chatStore.saveChat(record);
-      this.chatIndex = [record.meta];
-    }
-    const active = this.chatIndex[0];
-    await this.switchChat(active.id);
+    const { index, firstChatId } = await loadChatIndex(this.chatStore, this.settings);
+    this.chatIndex = index;
+    await this.switchChat(firstChatId);
   }
   renderChatOptions() {
-    this.chatSelect.empty();
-    this.chatIndex.forEach((chat) => {
-      const option = this.chatSelect.createEl("option", { text: chat.title, value: chat.id });
-      if (chat.id === this.activeChatId) {
-        option.selected = true;
-      }
-    });
+    renderChatOptions(this.chatSelect, this.chatIndex, this.activeChatId);
   }
   async switchChat(chatId) {
     var _a;
@@ -1403,15 +1628,13 @@ ${pending.preview.after}`);
     this.refreshUI();
   }
   async createNewChat() {
-    const record = this.chatStore.createChat("New Chat", this.settings);
-    await this.chatStore.saveChat(record);
-    this.chatIndex = await this.chatStore.loadIndex();
-    await this.switchChat(record.meta.id);
+    const { index, newChatId } = await createNewChat(this.chatStore, this.settings);
+    this.chatIndex = index;
+    await this.switchChat(newChatId);
   }
   async deleteCurrentChat() {
     if (!this.activeChatId) return;
-    await this.chatStore.deleteChat(this.activeChatId);
-    this.chatIndex = await this.chatStore.loadIndex();
+    this.chatIndex = await deleteChat(this.chatStore, this.activeChatId);
     if (this.chatIndex.length === 0) {
       await this.createNewChat();
       return;
@@ -1424,51 +1647,42 @@ ${pending.preview.after}`);
     this.refreshUI();
   }
   async saveActiveChat() {
-    var _a, _b, _c, _d;
     if (!this.activeChatId) return;
-    const record = {
-      meta: {
-        id: this.activeChatId,
-        title: (_b = (_a = this.chatIndex.find((chat) => chat.id === this.activeChatId)) == null ? void 0 : _a.title) != null ? _b : "Chat",
-        createdAt: (_d = (_c = this.chatIndex.find((chat) => chat.id === this.activeChatId)) == null ? void 0 : _c.createdAt) != null ? _d : (/* @__PURE__ */ new Date()).toISOString(),
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      },
+    this.chatIndex = await saveChat(this.chatStore, {
+      activeChatId: this.activeChatId,
+      chatIndex: this.chatIndex,
       settings: this.settings,
-      state: { header: this.parsedHeader, state: this.stateMachine.state },
-      messages: this.messages
-    };
-    await this.chatStore.saveChat(record);
-    this.chatIndex = await this.chatStore.loadIndex();
+      parsedHeader: this.parsedHeader,
+      stateMachineState: this.stateMachine.state,
+      messages: this.messages,
+      lastDocument: null
+    });
     this.renderChatOptions();
   }
-  // Legacy fixed-line header extractor removed; we now parse keys directly.
   updateSettings(settings) {
     this.settings = mergeChatSettings(settings, this.settings);
     this.modelClient = new ModelClient(this.settings);
     this.refreshUI();
   }
   async ensureChatNamed(firstUserMessage) {
-    if (!this.activeChatId) return;
-    if (this.hasNamedActiveChat) return;
-    const title = deriveChatTitle(firstUserMessage, 50);
-    const meta = this.chatIndex.find((c) => c.id === this.activeChatId);
-    if (!meta) return;
-    if (meta.title === title) {
-      this.hasNamedActiveChat = true;
-      return;
-    }
-    meta.title = title;
-    meta.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await this.chatStore.saveIndex(this.chatIndex);
-    this.hasNamedActiveChat = true;
+    const result = await ensureChatNamed(
+      this.chatStore,
+      this.chatIndex,
+      this.activeChatId,
+      this.hasNamedActiveChat,
+      firstUserMessage
+    );
+    this.chatIndex = result.chatIndex;
+    this.hasNamedActiveChat = result.hasNamedActiveChat;
     this.renderChatOptions();
   }
   async loadStateConfiguration() {
     const core = await this.ruleManager.loadCore();
     const parsed = this.parseStates(core.states);
-    const allowed = parsed.allowedStates.length ? parsed.allowedStates : ["idle", "thinking", "acting"];
+    const baseStates = ["idle", "thinking", "acting", "completed"];
+    const allowed = [.../* @__PURE__ */ new Set([...baseStates, ...parsed.allowedStates])];
     this.stateMap = parsed.stateMap;
-    this.stateMachine = new StateMachine(allowed, allowed[0], this.stateMap);
+    this.stateMachine = new StateMachine(allowed, "idle", this.stateMap);
   }
   parseStates(statesText) {
     var _a;

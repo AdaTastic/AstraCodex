@@ -13,8 +13,12 @@ export const renderMessages = (
   messages: Message[],
   transcriptEl: HTMLElement,
   onToggleHeader: (index: number) => void,
-  onToggleThink: (index: number) => void
+  onToggleThink: (index: number) => void,
+  options?: { preserveScroll?: boolean }
 ): void => {
+  // Remember scroll position
+  const isAtBottom = transcriptEl.scrollTop + transcriptEl.clientHeight >= transcriptEl.scrollHeight - 50;
+  
   (transcriptEl as any).empty();
   
   messages.forEach((msg, index) => {
@@ -22,6 +26,29 @@ export const renderMessages = (
     const bubble = row.createDiv({ cls: 'agentic-chat-bubble' });
     const label = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System';
     bubble.createDiv({ cls: 'agentic-chat-label', text: label });
+
+    // Tool messages (System) - make collapsible, collapsed by default
+    if (msg.role === 'tool') {
+      const toolHeader = bubble.createDiv({ cls: 'agentic-chat-tool-header' });
+      const toolName = msg.tool_call_id?.split('-').pop() ?? 'tool';
+      toolHeader.createDiv({ cls: 'agentic-chat-tool-activity', text: `${toolName} result` });
+      
+      const toggleBtn = toolHeader.createDiv({ 
+        cls: 'agentic-chat-tool-toggle',
+        text: '▸ Show'
+      });
+      
+      const resultContainer = bubble.createDiv({ cls: 'agentic-chat-tool-result-container' });
+      resultContainer.style.display = 'none'; // Collapsed by default
+      resultContainer.createDiv({ cls: 'agentic-chat-text', text: msg.content ?? '' });
+      
+      toggleBtn.addEventListener('click', () => {
+        const isHidden = resultContainer.style.display === 'none';
+        resultContainer.style.display = isHidden ? 'block' : 'none';
+        (toggleBtn as any).setText(isHidden ? '▾ Hide' : '▸ Show');
+      });
+      return; // Skip to next message
+    }
 
     if (msg.role === 'assistant' && msg.header) {
       const headerToggle = bubble.createDiv({
