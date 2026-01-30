@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestContext } from './helpers';
+import { createTestContext, writeDebugLog } from './helpers';
 import { runAgentLoop } from '../../agentLoop';
 import type { Message } from '../../types';
 
@@ -31,8 +31,7 @@ describe('E2E: File Writing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-writing_create-new-file');
 
     // Should call write
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -63,8 +62,7 @@ describe('E2E: File Writing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-writing_append-to-existing');
 
     // Should call append (not write) for existing file
     expect(ctx.vault.calls.append.length).toBeGreaterThanOrEqual(1);
@@ -93,8 +91,7 @@ describe('E2E: File Writing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-writing_nested-path');
 
     // Should call write with nested path
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -124,8 +121,7 @@ describe('E2E: File Writing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-writing_overwrite-file');
 
     // Should call write (overwrite) not append
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);
@@ -152,8 +148,7 @@ describe('E2E: File Writing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-writing_markdown-structure');
 
     // Should create file
     expect(ctx.vault.calls.write.length).toBeGreaterThanOrEqual(1);

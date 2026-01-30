@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestContext } from './helpers';
+import { createTestContext, writeDebugLog } from './helpers';
 import { runAgentLoop } from '../../agentLoop';
 import type { Message } from '../../types';
 
@@ -32,9 +32,8 @@ describe('E2E: File Reading', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    // Print debug output before assertions
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    // Write debug log to file
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-reading_read-file-when-asked');
 
     // Verify: read was called exactly once with correct path
     expect(ctx.vault.calls.read).toHaveLength(1);
@@ -64,8 +63,7 @@ describe('E2E: File Reading', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-reading_list-before-read-ambiguous');
 
     // Model should call list to find files first
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -92,8 +90,7 @@ describe('E2E: File Reading', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-reading_no-repeat-read');
 
     // Should read the file once, not repeatedly
     const readCallsForTestMd = ctx.vault.calls.read.filter(c => c.path === 'test.md');
@@ -118,8 +115,7 @@ describe('E2E: File Reading', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-reading_file-not-found');
 
     // Model should acknowledge the error in response
     const lowerText = result.text.toLowerCase();
@@ -163,8 +159,7 @@ describe('E2E: File Reading', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-reading_no-re-read-from-history');
 
     // Should NOT call read again - file content is in history
     expect(ctx.vault.calls.read).toHaveLength(0);

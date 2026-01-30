@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestContext } from './helpers';
+import { createTestContext, writeDebugLog } from './helpers';
 import { runAgentLoop } from '../../agentLoop';
 import type { Message } from '../../types';
 
@@ -44,8 +44,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_read-modify-write');
 
     // Should write or append (read already happened in history)
     const hasWrite = ctx.vault.calls.write.length > 0 || ctx.vault.calls.append.length > 0;
@@ -88,8 +87,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_multi-file-instructions');
 
     // Should write to target (read already happened in history)
     const targetWrites = ctx.vault.calls.write.filter(c => c.path === 'target.md');
@@ -119,8 +117,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_stop-after-completing');
 
     // Should complete in few turns, not exhaust maxTurns
     // Count assistant messages added after the user message
@@ -152,8 +149,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_error-and-recover');
 
     // Should try to read main.md first (will fail)
     const mainReads = ctx.vault.calls.read.filter(c => c.path === 'main.md');
@@ -187,8 +183,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_list-then-read');
 
     // Should call list first
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -221,8 +216,7 @@ describe('E2E: Multi-Step Operations', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'multi-step_summarize-multiple-files');
 
     // Should read all three files
     expect(ctx.vault.calls.read.length).toBeGreaterThanOrEqual(3);

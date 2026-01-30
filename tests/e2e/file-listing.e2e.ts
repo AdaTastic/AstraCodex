@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestContext } from './helpers';
+import { createTestContext, writeDebugLog } from './helpers';
 import { runAgentLoop } from '../../agentLoop';
 import type { Message } from '../../types';
 
@@ -34,8 +34,7 @@ describe('E2E: File Listing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-listing_list-files-when-asked');
 
     // Should call list with notes prefix
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -70,8 +69,7 @@ describe('E2E: File Listing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-listing_list-all-vault-contents');
 
     // Should call list
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -98,8 +96,7 @@ describe('E2E: File Listing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-listing_handle-empty-directory');
 
     // Should indicate no files found or folder is empty
     const lowerText = result.text.toLowerCase();
@@ -132,8 +129,7 @@ describe('E2E: File Listing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-listing_filter-by-file-type');
 
     // Should call list
     expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
@@ -164,8 +160,7 @@ describe('E2E: File Listing', () => {
       callbacks: ctx.debugCallbacks
     });
 
-    ctx.printDebug();
-    console.log('Vault calls:', JSON.stringify(ctx.vault.calls, null, 2));
+    writeDebugLog(ctx.debugLog, ctx.vault.calls, 'file-listing_drill-down-nested');
 
     // Should call list with projects/web prefix
     const webLists = ctx.vault.calls.list.filter(c => 

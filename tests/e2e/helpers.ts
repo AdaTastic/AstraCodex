@@ -1,5 +1,6 @@
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { vi } from 'vitest';
+import { join } from 'path';
 import { DEFAULT_SETTINGS, type AstraCodexSettings } from '../../settings';
 import { ModelClient } from '../../modelClient';
 import { buildPrompt } from '../../promptBuilder';
@@ -133,6 +134,21 @@ export interface DebugLog {
   }>;
 }
 
+const DEBUG_LOG_DIR = 'tests/e2e/logs';
+let currentTestName = 'unknown';
+
+export const setCurrentTestName = (name: string) => {
+  currentTestName = name.replace(/[^a-zA-Z0-9-_]/g, '_');
+};
+
+const getLogFilePath = () => {
+  if (!existsSync(DEBUG_LOG_DIR)) {
+    mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return join(DEBUG_LOG_DIR, `${currentTestName}_${timestamp}.txt`);
+};
+
 export const createDebugCallbacks = (log: DebugLog) => {
   let currentTurn = -1;
   
@@ -145,7 +161,6 @@ export const createDebugCallbacks = (log: DebugLog) => {
         toolCalls: [],
         toolResults: []
       };
-      console.log(`\n--- Turn ${turn} ---`);
     },
     onAssistantDelta: (delta: string, fullText: string) => {
       if (log.turns[currentTurn]) {
@@ -153,7 +168,6 @@ export const createDebugCallbacks = (log: DebugLog) => {
       }
     },
     onToolResult: ({ name, result }: { name: string; result: unknown }) => {
-      console.log(`[Tool: ${name}] Result:`, typeof result === 'string' ? result.slice(0, 200) : result);
       if (log.turns[currentTurn]) {
         log.turns[currentTurn].toolResults.push({ name, result });
       }
@@ -161,16 +175,57 @@ export const createDebugCallbacks = (log: DebugLog) => {
   };
 };
 
+export const writeDebugLog = (log: DebugLog, vaultCalls: Record<string, unknown[]>, testName?: string) => {
+  if (testName) {
+    setCurrentTestName(testName);
+  }
+  
+  const logPath = getLogFilePath();
+  const lines: string[] = [];
+  
+  lines.push(`========== E2E TEST DEBUG LOG ==========`);
+  lines.push(`Test: ${currentTestName}`);
+  lines.push(`Time: ${new Date().toISOString()}`);
+  lines.push('');
+  
+  for (const turn of log.turns) {
+    lines.push(`--- Turn ${turn.turn} ---`);
+    lines.push('');
+    lines.push('MODEL RESPONSE:');
+    lines.push(turn.modelResponse);
+    lines.push('');
+    
+    if (turn.toolResults.length > 0) {
+      lines.push('TOOL RESULTS:');
+      for (const tr of turn.toolResults) {
+        lines.push(`  [${tr.name}]: ${typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2)}`);
+      }
+      lines.push('');
+    }
+  }
+  
+  lines.push('========== VAULT CALLS ==========');
+  lines.push(JSON.stringify(vaultCalls, null, 2));
+  lines.push('');
+  lines.push('================================');
+  
+  writeFileSync(logPath, lines.join('\n'), 'utf-8');
+  console.log(`Debug log written to: ${logPath}`);
+  
+  return logPath;
+};
+
 export const printDebugLog = (log: DebugLog) => {
+  // Still print to console for immediate visibility
   console.log('\n========== DEBUG LOG ==========');
   for (const turn of log.turns) {
     console.log(`\n--- Turn ${turn.turn} ---`);
     console.log('Model Response:', turn.modelResponse.slice(0, 500));
     if (turn.modelResponse.length > 500) {
-      console.log('... (truncated)');
+      console.log('... (truncated, see log file for full output)');
     }
     if (turn.toolResults.length > 0) {
-      console.log('Tool Results:', turn.toolResults);
+      console.log('Tool Results:', turn.toolResults.map(tr => tr.name));
     }
   }
   console.log('\n================================');
