@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "id": "chat-2026-01-30T04-13-42-421Z",
+    "title": "Can you read this file? Harmful Algal Blooms (HAB…",
+    "createdAt": "2026-01-30T04:13:42.421Z",
+    "updatedAt": "2026-01-30T04:15:14.508Z"
+  },
+  "settings": {
+    "baseUrl": "http://127.0.0.1:11434",
+    "model": "glm47-tools-32k-.6:latest",
+    "includeActiveNote": false,
+    "maxContextChars": 120000,
+    "maxMemoryChars": 10000,
+    "contextSliderValue": 50
+  },
+  "state": {
+    "header": null,
+    "state": "Write"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you read this file? Harmful Algal Blooms (HABs)"
+    }
+  ]
+}
