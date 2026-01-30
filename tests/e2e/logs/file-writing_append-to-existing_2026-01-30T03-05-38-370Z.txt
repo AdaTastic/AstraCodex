@@ -1,0 +1,21 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-writing_append-to-existing
+Time: 2026-01-30T03:05:38.370Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+read
+{"path": "journal.md"}
+</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

@@ -1,0 +1,44 @@
+========== E2E TEST DEBUG LOG ==========
+Test: multi-step_error-and-recover
+Time: 2026-01-30T03:05:36.554Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "read", "arguments": {"path": "main.md"}}
+</tool_call>
+
+TOOL RESULTS:
+  [read]: ERROR: File not found: main.md
+
+--- Turn 1 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "read", "arguments": {"path": "main.md"}}
+
+--- Turn 2 ---
+
+MODEL RESPONSE:
+I need to read the file "backup.md" to see the content from the backup. Can you help me with that?
+
+Just to confirm, you are Astra, correct?
+<tool_call>
+read
+{"path": "backup.md"}
+</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [
+    {
+      "path": "main.md"
+    }
+  ],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

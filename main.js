@@ -115,9 +115,26 @@ Rules:
 - Tool results will be added to conversation history automatically
 - You will be called again after each tool execution to see the result
 
-FILE READING GUIDANCE:
-- If the user asks to read a file by name/title, call \`list\` first to find the correct path.
-- Only call \`read\` after you have a specific vault path.
+CRITICAL FILE READING RULES:
+1. NEVER re-read a file that was already read - check Conversation History for [FILE: path] entries
+2. If user gives an ambiguous filename (no path), call \`list\` first to find the full path
+3. Only call \`read\` after you have a specific vault path from list results
+
+MULTI-STEP TASKS:
+- For read-only operations: complete all reads, then respond
+- For write operations: ALWAYS ask for confirmation before writing/appending
+- Show the user what you plan to write and ask: "Shall I proceed with this change?"
+- Only execute write/append after user confirms
+
+WRITE SAFETY:
+- NEVER write or append without explicit user confirmation
+- After reading a file, describe your planned changes and wait for approval
+- Use \`append\` for adding content to existing files
+- Use \`write\` for creating new files or replacing entire content
+
+ERROR HANDLING:
+- If a tool returns "ERROR:", acknowledge the error and try alternatives
+- If asked to fallback to another file, do so automatically
 
 Your response should be clean and conversational.
 DO NOT output "STATE:" or "NEEDS_CONFIRMATION:" headers - state is tracked internally.
@@ -709,21 +726,31 @@ var runAgentLoop = async ({
   callbacks,
   signal
 }) => {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
   let lastResponse = null;
+  const filesReadThisSession = /* @__PURE__ */ new Set();
+  for (const msg of history) {
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.name === "read" && ((_a = tc.arguments) == null ? void 0 : _a.path)) {
+          filesReadThisSession.add(String(tc.arguments.path));
+        }
+      }
+    }
+  }
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, history });
+    (_b = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _b.call(callbacks, { turn, history });
     const prompt = buildPrompt2(history);
     const assistantMessage = {
       role: "assistant",
       content: ""
     };
     history.push(assistantMessage);
-    (_b = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _b.call(callbacks, assistantMessage);
-    (_c = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _c.call(callbacks);
+    (_c = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _c.call(callbacks, assistantMessage);
+    (_d = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _d.call(callbacks);
     let streamed = "";
     const response = await model.generateStream(
       prompt,
@@ -736,19 +763,19 @@ var runAgentLoop = async ({
       { signal }
     );
     lastResponse = response;
-    (_d = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _d.call(callbacks, response.header);
+    (_e = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _e.call(callbacks, response.header);
     assistantMessage.content = response.text;
     const extracted = extractFencedToolCall(response.text);
     if (extracted && !isExtractionError(extracted)) {
       const toolCallInfo = {
         name: extracted.toolCall.name,
-        arguments: (_e = extracted.toolCall.arguments) != null ? _e : {}
+        arguments: (_f = extracted.toolCall.arguments) != null ? _f : {}
       };
       assistantMessage.tool_calls = [toolCallInfo];
     }
     if (!extracted) break;
     if (isExtractionError(extracted)) {
-      (_f = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _f.call(callbacks, { error: extracted.error });
+      (_g = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _g.call(callbacks, { error: extracted.error });
       const errorMessage = {
         role: "user",
         content: `ERROR: ${extracted.error}
@@ -756,14 +783,28 @@ var runAgentLoop = async ({
 Please try again with exactly ONE tool block.`
       };
       history.push(errorMessage);
-      (_g = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _g.call(callbacks, errorMessage);
+      (_h = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _h.call(callbacks, errorMessage);
       continue;
     }
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const executed = await executeToolCall(toolRunner, extracted.toolCall);
-    (_h = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _h.call(callbacks, { name: executed.name, result: executed.result });
+    const toolCall = extracted.toolCall;
+    if (toolCall.name === "read" && ((_i = toolCall.arguments) == null ? void 0 : _i.path)) {
+      const filePath = String(toolCall.arguments.path);
+      if (filesReadThisSession.has(filePath)) {
+        const hintMessage = {
+          role: "user",
+          content: `NOTE: File "${filePath}" was already read earlier in this conversation. The content is in the history above. Please use that content instead of re-reading.`
+        };
+        history.push(hintMessage);
+        (_j = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _j.call(callbacks, hintMessage);
+        continue;
+      }
+      filesReadThisSession.add(filePath);
+    }
+    const executed = await executeToolCall(toolRunner, toolCall);
+    (_k = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _k.call(callbacks, { name: executed.name, result: executed.result });
     const toolResultMessage = {
       role: "tool",
       content: typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2),
@@ -771,7 +812,7 @@ Please try again with exactly ONE tool block.`
       tool_call_id: `${turn}-${executed.name}`
     };
     history.push(toolResultMessage);
-    (_i = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _i.call(callbacks, toolResultMessage);
+    (_l = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _l.call(callbacks, toolResultMessage);
   }
   if (!lastResponse) {
     throw new Error("Agent loop did not produce a model response");
@@ -787,7 +828,7 @@ var stripLeakedHeaders = (text) => {
   return text.replace(/^STATE:\s*\S+\s*/gim, "").replace(/^NEEDS_CONFIRMATION:\s*\S+\s*/gim, "").replace(/^FINAL:\s*/gim, "").replace(/^TOOL CALLS:\s*/gim, "").replace(/\n{3,}/g, "\n\n").trim();
 };
 var buildConversationHistory = (messages, maxChars, opts) => {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   if (maxChars <= 0) return "[]";
   const excludeLatestUserMessage = (_a = opts == null ? void 0 : opts.excludeLatestUserMessage) != null ? _a : false;
   let startIndex = messages.length - 1;
@@ -816,8 +857,20 @@ var buildConversationHistory = (messages, maxChars, opts) => {
       }
     } else if (msg.role === "tool") {
       const rawContent = ((_e = msg.content) == null ? void 0 : _e.trim()) || JSON.stringify((_f = msg.tool_result) != null ? _f : "");
-      const toolName = (_h = (_g = msg.tool_call_id) == null ? void 0 : _g.split("-").pop()) != null ? _h : "tool";
-      const content = `[TOOL RESULT: ${toolName}]
+      const toolCallId = (_g = msg.tool_call_id) != null ? _g : "";
+      const toolName = (_h = toolCallId.split("-").pop()) != null ? _h : "tool";
+      let filePath = "";
+      if (toolName === "read" && i > 0) {
+        const prevMsg = messages[i - 1];
+        if ((prevMsg == null ? void 0 : prevMsg.role) === "assistant" && ((_i = prevMsg.tool_calls) == null ? void 0 : _i.length)) {
+          const readCall = prevMsg.tool_calls.find((tc) => tc.name === "read");
+          if ((_j = readCall == null ? void 0 : readCall.arguments) == null ? void 0 : _j.path) {
+            filePath = String(readCall.arguments.path);
+          }
+        }
+      }
+      const label = filePath ? `[FILE: ${filePath}]` : `[TOOL RESULT: ${toolName}]`;
+      const content = `${label}
 ${rawContent}`;
       entry = {
         role: "tool",

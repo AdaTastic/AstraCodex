@@ -1,0 +1,41 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-reading_list-before-read-ambiguous
+Time: 2026-01-30T03:05:46.712Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "read", "arguments": {"path": "project.md"}}
+</tool_call>
+
+TOOL RESULTS:
+  [read]: ERROR: File not found: project.md
+
+--- Turn 1 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "read", "arguments": {"path": "project.md"}}
+
+--- Turn 2 ---
+
+MODEL RESPONSE:
+<tool_call>
+read
+{"path": "project.md"}
+</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [
+    {
+      "path": "project.md"
+    }
+  ],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

@@ -1,0 +1,19 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-reading_file-not-found
+Time: 2026-01-30T03:05:48.045Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+list</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

@@ -1,0 +1,21 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-writing_markdown-structure
+Time: 2026-01-30T03:05:39.923Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+I'll create meeting-2024-01.md with the meeting notes. Shall I proceed?<tool_call>
+write
+{"path": "meeting-2024-01.md", "content": "# Meeting Notes - January 2024\n\n**Date:** 2024-01-01\n**Attendees:** Alice, Bob, Charlie\n\n## Action Items\n\n1. **Alice** - Follow up with client X regarding project timeline\n2. **Bob** - Prepare budget proposal for Q1\n3. **Charlie** - Update team documentation\n\n## Discussion Points\n\n- Project timeline review\n- Budget planning for Q1\n- Documentation updates\n\n## Next Meeting\n\nTo be scheduled"}
+</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

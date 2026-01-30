@@ -1,0 +1,70 @@
+========== E2E TEST DEBUG LOG ==========
+Test: multi-step_list-then-read
+Time: 2026-01-30T03:05:37.504Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "list", "arguments": {"prefix": "notes"}}
+</tool_call>
+
+TOOL RESULTS:
+  [list]: [
+  "notes/meeting-jan.md",
+  "notes/meeting-feb.md",
+  "notes/todo.md"
+]
+
+--- Turn 1 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "list", "arguments": {"prefix": "notes"}}
+
+TOOL RESULTS:
+  [list]: [
+  "notes/meeting-jan.md",
+  "notes/meeting-feb.md",
+  "notes/todo.md"
+]
+
+--- Turn 2 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "list", "arguments": {"prefix": "notes"}}
+
+TOOL RESULTS:
+  [list]: [
+  "notes/meeting-jan.md",
+  "notes/meeting-feb.md",
+  "notes/todo.md"
+]
+
+--- Turn 3 ---
+
+MODEL RESPONSE:
+<tool_call>
+list
+<arg_key>prefix</arg_key><arg_value>notes</arg_value></tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [
+    {
+      "prefix": "notes"
+    },
+    {
+      "prefix": "notes"
+    },
+    {
+      "prefix": "notes"
+    }
+  ],
+  "write": [],
+  "append": []
+}
+
+================================
