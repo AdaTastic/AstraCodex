@@ -68,6 +68,20 @@ export interface Message {
   tool_result?: unknown;
   /** ID linking tool result to tool call - OpenAI format */
   tool_call_id?: string;
+  
+  // UI-only fields (not sent to model, used for rendering)
+  /** Raw model output before parsing (for debugging) */
+  rawText?: string;
+  /** Activity line (e.g., "reading: file.md") */
+  activityLine?: string | null;
+  /** Think block expanded state */
+  thinkExpanded?: boolean;
+  /** Header expanded state */
+  headerExpanded?: boolean;
+  /** Header text (deprecated, but kept for legacy rendering) */
+  header?: string;
+  /** Display text (alias for content, legacy compatibility) */
+  text?: string;
 }
 
 export interface ParsedHeader {

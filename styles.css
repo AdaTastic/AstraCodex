@@ -191,31 +191,74 @@
 }
 
 /* Agentic Tool Display Styles */
-.agentic-chat-tool-activity {
-  font-size: 0.8rem;
-  color: var(--text-accent);
-  padding: 4px 8px;
-  background: var(--background-modifier-hover);
-  border-radius: 4px;
-  margin: 6px 0;
-  font-family: var(--font-monospace);
-}
 
-.agentic-chat-tool-segment {
+/* Text segments between tool calls */
+.agentic-chat-text-segment {
+  white-space: pre-wrap;
   margin: 8px 0;
-  padding: 6px 0;
-  border-top: 1px dashed var(--background-modifier-border);
-  border-bottom: 1px dashed var(--background-modifier-border);
 }
 
-.agentic-chat-tool-segment:first-child {
-  border-top: none;
+.agentic-chat-text-segment:first-child {
   margin-top: 0;
 }
 
-.agentic-chat-tool-segment:last-child {
-  border-bottom: none;
+.agentic-chat-text-segment:last-child {
   margin-bottom: 0;
+}
+
+/* Tool call box - distinct visual container */
+.agentic-chat-tool-box {
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  border-left: 3px solid var(--text-accent);
+}
+
+.agentic-chat-tool-box:first-child {
+  margin-top: 4px;
+}
+
+.agentic-chat-tool-box:last-child {
+  margin-bottom: 0;
+}
+
+/* Tool header row with activity and toggle */
+.agentic-chat-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agentic-chat-tool-activity {
+  font-size: 0.8rem;
+  color: var(--text-accent);
+  font-family: var(--font-monospace);
+  flex: 1;
+}
+
+/* Show/Hide toggle button */
+.agentic-chat-tool-toggle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+}
+
+.agentic-chat-tool-toggle:hover {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+/* Tool result container (collapsible) */
+.agentic-chat-tool-result-container {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--background-modifier-border);
 }
 
 .agentic-chat-tool-result {

@@ -72,22 +72,38 @@ export const renderMessages = (
 
 /**
  * Renders message segments (text and tool calls) in sequence.
+ * Tool calls get their own collapsible box, collapsed by default.
  */
 const renderSegments = (bubble: HTMLElement, segments: MessageSegment[]): void => {
   for (const segment of segments) {
     if (segment.type === 'text') {
       if (segment.content.trim()) {
-        (bubble as any).createDiv({ cls: 'agentic-chat-text', text: segment.content });
+        (bubble as any).createDiv({ cls: 'agentic-chat-text-segment', text: segment.content });
       }
     } else if (segment.type === 'tool') {
-      const toolContainer = (bubble as any).createDiv({ cls: 'agentic-chat-tool-segment' });
+      const toolBox = (bubble as any).createDiv({ cls: 'agentic-chat-tool-box' });
       
-      // Activity line (e.g., "🔍 searching: ...")
-      toolContainer.createDiv({ cls: 'agentic-chat-tool-activity', text: segment.activity });
+      // Header row with activity and toggle
+      const headerRow = toolBox.createDiv({ cls: 'agentic-chat-tool-header' });
+      headerRow.createDiv({ cls: 'agentic-chat-tool-activity', text: segment.activity });
       
-      // Tool result (if available)
+      // Tool result (collapsible, collapsed by default)
       if (segment.result) {
-        renderToolResult(toolContainer, segment.result);
+        const resultContainer = toolBox.createDiv({ cls: 'agentic-chat-tool-result-container' });
+        resultContainer.style.display = 'none'; // Collapsed by default
+        
+        const toggleBtn = headerRow.createDiv({ 
+          cls: 'agentic-chat-tool-toggle',
+          text: '▸ Show'
+        });
+        
+        toggleBtn.addEventListener('click', () => {
+          const isHidden = resultContainer.style.display === 'none';
+          resultContainer.style.display = isHidden ? 'block' : 'none';
+          toggleBtn.setText(isHidden ? '▾ Hide' : '▸ Show');
+        });
+        
+        renderToolResult(resultContainer, segment.result);
       }
     }
   }
@@ -181,8 +197,8 @@ export const updateLastAssistantMessage = (
 export const pushMessage = (
   messages: Message[],
   role: Message['role'],
-  text: string,
+  content: string,
   header?: string
 ): void => {
-  messages.push({ role, text, header, headerExpanded: false });
+  messages.push({ role, content, text: content, header, headerExpanded: false });
 };
