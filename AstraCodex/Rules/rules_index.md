@@ -1,7 +1,7 @@
 # Rules Index
 
 Base rules (always loaded):
-- tool_protocol: tool call format and retrigger semantics
+- tool_protocol: tool call format and agent loop behavior
 - file_inspection: reading/summarizing notes workflow
 - consent_and_modes: thinking/acting and confirmation policy
 - memory_policy: what can be stored and when

@@ -11,28 +11,40 @@ Use this workflow whenever the user asks to:
 1) If the user refers to the "current file" / "active note":
    - First request the active file path:
 
-```tool
-{"name":"active_file","args":{},"retrigger":{"message":"If the tool result is null, ask the user to open a file and try again. If it is a path, request a read of that path."}}
+```xml
+<tool_call>
+{"name": "active_file", "arguments": {}}
+</tool_call>
 ```
+
+   - If the tool result is null, ask the user to open a file and try again.
+   - If it returns a path, proceed to read that file.
 
 2) Otherwise (including when the user provides a filename/title):
    - Always request a vault listing first so you can choose the best matching file path.
    - Do NOT call `read` directly using a guessed path or title.
    - This avoids errors like missing file extensions (e.g. `.md`) or wrong folders.
 
-```tool
-{"name":"list","args":{"prefix":""},"retrigger":{"message":"From the file list above, choose the best matching file path. If unsure, ask the user to clarify. If sure, request a read of the chosen file."}}
+```xml
+<tool_call>
+{"name": "list", "arguments": {"prefix": ""}}
+</tool_call>
 ```
 
-3) After you have chosen a file path, read it:
+3) After you have chosen a file path from the list results, read it:
 
-```tool
-{"name":"read","args":{"path":"<chosen-path>"},"retrigger":{"message":"Summarize the file content above. Then ask the user what they want to do next."}}
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "chosen/file/path.md"}}
+</tool_call>
 ```
 
 4) If there are multiple plausible matches:
-- Ask the user which file they mean and show 3-7 candidates.
+   - Ask the user which file they mean and show 3-7 candidates.
+   - Wait for clarification before reading.
 
-```tool
-{"name":"list","args":{"prefix":""},"retrigger":{"message":"From the file list above, choose the best matching file path. If unsure, ask the user to clarify. If sure, request a read of the chosen file."}}
-```
+## Important
+
+- Check conversation history for `[FILE: path]` entries before calling read again
+- Never re-read a file that was already read in the current conversation
+- After reading, summarize the content and ask the user what they want to do next

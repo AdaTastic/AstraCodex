@@ -14,7 +14,7 @@ import { runAgentLoop } from './agentLoop';
 import { extractFencedToolCall, formatToolActivity, stripToolBlocks, isExtractionError } from './toolOrchestrator';
 import { buildConversationHistory } from './conversationHistory';
 // Extracted modules
-import { extractThink, extractHeaderAndBody, extractFinal, extractRetriggerMessage, extractLastReadPath, parseStateFromHeader } from './textParser';
+import { extractThink, extractHeaderAndBody, extractFinal, extractLastReadPath, parseStateFromHeader } from './textParser';
 import { renderMessages as renderMessagesUtil, updateLastAssistantMessage as updateLastAssistantMessageUtil, pushMessage as pushMessageUtil } from './messageRenderer';
 import * as ChatManager from './chatManager';
 

@@ -55,19 +55,6 @@ export const extractFinal = (text: string): { final: string | null; body: string
 };
 
 /**
- * Extracts retrigger message from STATE: RETRIGGER header.
- */
-export const extractRetriggerMessage = (text: string): string | null => {
-  const { header } = extractHeaderAndBody(text);
-  if (!header) return null;
-  const retriggerMatch = header.match(/STATE:\s*RETRIGGER\s*(\n)?(.*)/);
-  if (retriggerMatch) {
-    return retriggerMatch[2]?.trim() ?? null;
-  }
-  return null;
-};
-
-/**
  * Extracts the path argument from the last fenced tool block.
  */
 export const extractLastReadPath = (text: string): string | null => {

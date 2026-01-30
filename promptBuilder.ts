@@ -61,7 +61,6 @@ ERROR HANDLING:
 - If asked to fallback to another file, do so automatically
 
 Your response should be clean and conversational.
-DO NOT output "STATE:" or "NEEDS_CONFIRMATION:" headers - state is tracked internally.
 `;
 
 const clamp = (value: string, maxChars: number): string => {
