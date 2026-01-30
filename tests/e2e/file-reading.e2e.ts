@@ -1,72 +1,153 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { createTestContext } from './helpers';
+import { runAgentLoop } from '../../agentLoop';
+import type { Message } from '../../types';
 
 /**
  * E2E Tests: File Reading
  * 
- * These tests verify actual model behavior with file reading operations.
- * Skipped by default - requires real model connection.
+ * Tests actual model behavior with file reading operations.
+ * Requires Ollama running with model from data.json.
  * 
  * To run: RUN_E2E=true npm run test:e2e
  */
 
 const skipE2E = !process.env.RUN_E2E;
 
-const createMockVault = (files: Record<string, string>) => {
-  const readCalls: string[] = [];
-  return {
-    readCalls,
-    read: vi.fn(async (path: string) => {
-      readCalls.push(path);
-      return files[path] ?? `File not found: ${path}`;
-    }),
-    list: vi.fn(async (prefix: string) => {
-      return Object.keys(files).filter(f => f.startsWith(prefix));
-    }),
-    write: vi.fn(async () => {}),
-    append: vi.fn(async () => {})
-  };
-};
-
 describe('E2E: File Reading', () => {
-  it.skipIf(skipE2E)('should read a file without repeating the call', async () => {
-    const mockVault = createMockVault({ 
-      'test.md': '# Hello World\n\nThis is test content.'
+  it.skipIf(skipE2E)('should read a file when asked', async () => {
+    const ctx = createTestContext({
+      'notes/test.md': '# Test File\n\nThis is test content with **bold** text.',
+      'notes/other.md': '# Other File'
     });
-    
-    // TODO: Configure with real model
-    // const result = await runAgentLoop({
-    //   history: [{ role: 'user', content: 'Read test.md' }],
-    //   buildPrompt: (h) => JSON.stringify(h),
-    //   model: realModelClient,
-    //   toolRunner: toolRunnerWithMockVault,
-    //   maxTurns: 4
-    // });
-    
-    // Verify file was read exactly once (no repeats)
-    // expect(mockVault.readCalls).toHaveLength(1);
-    // expect(mockVault.readCalls[0]).toBe('test.md');
-    
-    expect(true).toBe(true);
-  });
 
-  it.skipIf(skipE2E)('should use list before read when file path is ambiguous', async () => {
-    const mockVault = createMockVault({
+    const history: Message[] = [
+      { role: 'user', content: 'Read the file notes/test.md' }
+    ];
+
+    const result = await runAgentLoop({
+      history,
+      buildPrompt: ctx.buildPrompt,
+      model: ctx.model,
+      toolRunner: ctx.toolRunner,
+      maxTurns: 4
+    });
+
+    // Verify: read was called exactly once with correct path
+    expect(ctx.vault.calls.read).toHaveLength(1);
+    expect(ctx.vault.calls.read[0].path).toBe('notes/test.md');
+    
+    // Verify: response contains file content
+    expect(result.text).toContain('Test File');
+  }, { timeout: 60000 });
+
+  it.skipIf(skipE2E)('should use list before read when path is ambiguous', async () => {
+    const ctx = createTestContext({
       'notes/project.md': '# Project Notes',
-      'docs/project.md': '# Project Docs'
+      'docs/project.md': '# Project Docs',
+      'archive/project.md': '# Archived Project'
     });
-    
-    // When asked to "read project.md", model should:
-    // 1. Call list to find files
-    // 2. Ask for clarification OR pick one
-    // 3. Call read exactly once
-    
-    expect(true).toBe(true);
-  });
 
-  it.skipIf(skipE2E)('should not re-read file already in conversation history', async () => {
-    // If file was already read in the conversation,
-    // model should use cached result, not read again
+    const history: Message[] = [
+      { role: 'user', content: 'Read project.md' }
+    ];
+
+    const result = await runAgentLoop({
+      history,
+      buildPrompt: ctx.buildPrompt,
+      model: ctx.model,
+      toolRunner: ctx.toolRunner,
+      maxTurns: 6
+    });
+
+    // Model should call list to find files first
+    expect(ctx.vault.calls.list.length).toBeGreaterThanOrEqual(1);
     
-    expect(true).toBe(true);
-  });
+    // Then read one of them
+    expect(ctx.vault.calls.read.length).toBeGreaterThanOrEqual(1);
+  }, { timeout: 60000 });
+
+  it.skipIf(skipE2E)('should not repeat read for same file', async () => {
+    const ctx = createTestContext({
+      'test.md': '# Hello World\n\nImportant content here.'
+    });
+
+    const history: Message[] = [
+      { role: 'user', content: 'Read test.md and summarize it' }
+    ];
+
+    await runAgentLoop({
+      history,
+      buildPrompt: ctx.buildPrompt,
+      model: ctx.model,
+      toolRunner: ctx.toolRunner,
+      maxTurns: 8
+    });
+
+    // Should read the file once, not repeatedly
+    const readCallsForTestMd = ctx.vault.calls.read.filter(c => c.path === 'test.md');
+    expect(readCallsForTestMd.length).toBe(1);
+  }, { timeout: 60000 });
+
+  it.skipIf(skipE2E)('should handle file not found gracefully', async () => {
+    const ctx = createTestContext({
+      'existing.md': '# Exists'
+    });
+
+    const history: Message[] = [
+      { role: 'user', content: 'Read nonexistent.md' }
+    ];
+
+    const result = await runAgentLoop({
+      history,
+      buildPrompt: ctx.buildPrompt,
+      model: ctx.model,
+      toolRunner: ctx.toolRunner,
+      maxTurns: 4
+    });
+
+    // Model should acknowledge the error in response
+    const lowerText = result.text.toLowerCase();
+    expect(
+      lowerText.includes('not found') || 
+      lowerText.includes('error') ||
+      lowerText.includes("doesn't exist") ||
+      lowerText.includes("does not exist")
+    ).toBe(true);
+  }, { timeout: 60000 });
+
+  it.skipIf(skipE2E)('should not re-read file already in conversation', async () => {
+    const ctx = createTestContext({
+      'data.md': '# Data\n\nValue: 42'
+    });
+
+    // Simulate a conversation where file was already read
+    const history: Message[] = [
+      { role: 'user', content: 'Read data.md' },
+      { 
+        role: 'assistant', 
+        content: 'Let me read that file.',
+        tool_calls: [{ name: 'read', arguments: { path: 'data.md' } }]
+      },
+      {
+        role: 'tool',
+        content: '# Data\n\nValue: 42',
+        tool_result: '# Data\n\nValue: 42',
+        tool_call_id: '0-read'
+      },
+      { role: 'assistant', content: 'The file contains data with Value: 42.' },
+      { role: 'user', content: 'What was the value in that file again?' }
+    ];
+
+    await runAgentLoop({
+      history,
+      buildPrompt: ctx.buildPrompt,
+      model: ctx.model,
+      toolRunner: ctx.toolRunner,
+      maxTurns: 4
+    });
+
+    // Should NOT call read again - file content is in history
+    expect(ctx.vault.calls.read).toHaveLength(0);
+  }, { timeout: 60000 });
 });
