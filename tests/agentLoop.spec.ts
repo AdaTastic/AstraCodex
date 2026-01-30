@@ -26,12 +26,12 @@ describe('runAgentLoop', () => {
   it('runs single turn without tool call', async () => {
     const model = createMockModel(['Hello, how can I help?']);
     const runner = createMockToolRunner();
-    const history: Message[] = [{ role: 'user', text: 'Hi' }];
+    const history: Message[] = [{ role: 'user', content: 'Hi' }];
     const onTurnStart = vi.fn();
 
     const result = await runAgentLoop({
       history,
-      buildPrompt: (h) => h.map(m => `${m.role}: ${m.text}`).join('\n'),
+      buildPrompt: (h) => h.map(m => `${m.role}: ${m.content}`).join('\n'),
       model,
       toolRunner: runner,
       callbacks: { onTurnStart }
@@ -48,13 +48,13 @@ describe('runAgentLoop', () => {
       'Found files: a.md'
     ]);
     const runner = createMockToolRunner();
-    const history: Message[] = [{ role: 'user', text: 'List files' }];
+    const history: Message[] = [{ role: 'user', content: 'List files' }];
     const onToolResult = vi.fn();
     const onMessageAdded = vi.fn();
 
     const result = await runAgentLoop({
       history,
-      buildPrompt: (h) => h.map(m => `${m.role}: ${m.text}`).join('\n'),
+      buildPrompt: (h) => h.map(m => `${m.role}: ${m.content}`).join('\n'),
       model,
       toolRunner: runner,
       callbacks: { onToolResult, onMessageAdded }
@@ -77,7 +77,7 @@ describe('runAgentLoop', () => {
       '<tool_call>{"name": "list", "arguments": {}}</tool_call>'
     ]);
     const runner = createMockToolRunner();
-    const history: Message[] = [{ role: 'user', text: 'Loop forever' }];
+    const history: Message[] = [{ role: 'user', content: 'Loop forever' }];
 
     await runAgentLoop({
       history,
@@ -99,7 +99,7 @@ describe('runAgentLoop', () => {
     const runner = {
       executeTool: vi.fn().mockResolvedValue('file content here')
     } as unknown as ToolRunner;
-    const history: Message[] = [{ role: 'user', text: 'Read test.md' }];
+    const history: Message[] = [{ role: 'user', content: 'Read test.md' }];
 
     await runAgentLoop({
       history,
@@ -111,7 +111,7 @@ describe('runAgentLoop', () => {
     // Check that tool message was added
     const toolMsg = history.find(m => m.role === 'tool');
     expect(toolMsg).toBeDefined();
-    expect(toolMsg?.text).toBe('file content here');
-    expect(toolMsg?.toolResult).toBe('file content here');
+    expect(toolMsg?.content).toBe('file content here');
+    expect(toolMsg?.tool_result).toBe('file content here');
   });
 });

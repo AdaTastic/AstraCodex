@@ -37,13 +37,34 @@ describe('chatSession', () => {
       meta: { id: 'chat-1', title: 'Chat', createdAt: 'now', updatedAt: 'now' },
       settings: { ...DEFAULT_SETTINGS, baseUrl: 'url', model: 'model', includeActiveNote: false, maxContextChars: 10, maxMemoryChars: 5 },
       state: { header: null, state: 'idle' },
-      messages: [{ role: 'user', text: 'hi' }]
+      // Use old format to test migration (cast to any to simulate old data)
+      messages: [{ role: 'user', text: 'hi' } as any]
     });
 
     const restored = restoreChatState(record);
 
-    expect(restored.messages[0].text).toBe('hi');
+    // Migration converts text -> content
+    expect(restored.messages[0].content).toBe('hi');
     expect(restored.settings.model).toBe('model');
     expect(restored.state.state).toBe('idle');
+  });
+
+  it('migrates old message format (text -> content)', () => {
+    const record = createChatRecord({
+      meta: { id: 'chat-1', title: 'Test', createdAt: 'now', updatedAt: 'now' },
+      settings: DEFAULT_SETTINGS,
+      state: { header: null, state: 'idle' },
+      // Old format messages (cast to any to simulate old data)
+      messages: [
+        { role: 'user', text: 'old format' } as any,
+        { role: 'assistant', text: 'response', toolCalls: [{ name: 'read', arguments: { path: 'test.md' } }] } as any
+      ]
+    });
+
+    const restored = restoreChatState(record);
+
+    expect(restored.messages[0].content).toBe('old format');
+    expect(restored.messages[1].content).toBe('response');
+    expect(restored.messages[1].tool_calls?.[0].name).toBe('read');
   });
 });
