@@ -159,8 +159,6 @@ var buildPrompt = ({
   const headerSection = HEADER_REMINDER.trim();
   contextSections.push(`Charter:
 ${coreRules.charter}`);
-  contextSections.push(`States:
-${coreRules.states}`);
   const voice = voiceOverride != null ? voiceOverride : coreRules.voice;
   if (voice == null ? void 0 : voice.trim()) {
     contextSections.push(`Voice:

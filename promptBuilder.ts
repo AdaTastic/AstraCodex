@@ -85,7 +85,6 @@ export const buildPrompt = ({
   const headerSection = HEADER_REMINDER.trim();
 
   contextSections.push(`Charter:\n${coreRules.charter}`);
-  contextSections.push(`States:\n${coreRules.states}`);
 
   const voice = voiceOverride ?? coreRules.voice;
   if (voice?.trim()) {

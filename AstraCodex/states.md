@@ -8,10 +8,10 @@ AstraCodex tracks internal process through states. These are managed by the syst
 
 The UI displays these states based on model activity:
 
-- **idle** - Awaiting input
-- **thinking** - Analyzing, planning, or reasoning
-- **acting** - Executing a tool
-- **completed** - Task finished
+- idle - Awaiting input
+- thinking - Analyzing, planning, or reasoning
+- acting - Executing a tool
+- completed - Task finished
 
 ---
 
