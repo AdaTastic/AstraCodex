@@ -1,0 +1,38 @@
+========== E2E TEST DEBUG LOG ==========
+Test: multi-step_summarize-multiple-files
+Time: 2026-01-30T03:16:07.992Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "list", "arguments": {"prefix": ""}}
+</tool_call>
+
+TOOL RESULTS:
+  [list]: [
+  "chapter1.md",
+  "chapter2.md",
+  "chapter3.md"
+]
+
+--- Turn 1 ---
+
+MODEL RESPONSE:
+<tool_call>
+list
+</tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [
+    {
+      "prefix": ""
+    }
+  ],
+  "write": [],
+  "append": []
+}
+
+================================

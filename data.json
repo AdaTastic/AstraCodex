@@ -1,6 +1,6 @@
 {
   "baseUrl": "http://127.0.0.1:11434",
-  "model": "glm47-tools-16k",
+  "model": "glm47-tools-32k-.6:latest",
   "includeActiveNote": false,
   "maxContextChars": 120000,
   "maxMemoryChars": 10000,

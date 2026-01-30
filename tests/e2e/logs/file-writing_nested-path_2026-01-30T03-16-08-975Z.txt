@@ -1,0 +1,21 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-writing_nested-path
+Time: 2026-01-30T03:16:08.975Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+write
+{"path": "projects/web/readme.md", "content": "# Web Project\n\nThis is the Web Project README file."}
+
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================

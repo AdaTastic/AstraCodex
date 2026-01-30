@@ -1,0 +1,38 @@
+========== E2E TEST DEBUG LOG ==========
+Test: file-writing_overwrite-file
+Time: 2026-01-30T03:16:09.586Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+{"name": "write", "arguments": {"path": "config.md", "content": "# New Config\n\nNew settings here"}}
+</tool_call>
+
+TOOL RESULTS:
+  [write]: {
+  "success": true
+}
+
+--- Turn 1 ---
+
+MODEL RESPONSE:
+<tool_call>
+write<arg_key>path</arg_key><arg_value>config.md</arg_value><arg_key>content</arg_key><arg_value># New Config
+
+New settings here</arg_value></tool_call>
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [
+    {
+      "path": "config.md",
+      "content": "# New Config\n\nNew settings here"
+    }
+  ],
+  "append": []
+}
+
+================================

@@ -1,0 +1,20 @@
+========== E2E TEST DEBUG LOG ==========
+Test: multi-step_multi-file-instructions
+Time: 2026-01-30T03:16:01.134Z
+
+--- Turn 0 ---
+
+MODEL RESPONSE:
+<tool_call>
+write
+{"path": "target.md", "content": "42"}
+
+========== VAULT CALLS ==========
+{
+  "read": [],
+  "list": [],
+  "write": [],
+  "append": []
+}
+
+================================
