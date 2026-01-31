@@ -53,25 +53,15 @@ export const runAgentLoop = async ({
 }: RunAgentLoopArgs): Promise<ModelResponse> => {
   let lastResponse: ModelResponse | null = null;
   
-  // Track files already read to prevent re-reading
-  const filesReadThisSession = new Set<string>();
+  // Track files read within THIS agent loop run only (not from history)
+  // This allows re-reading files across different user messages
+  const filesReadThisRun = new Set<string>();
   
   // Track last tool call to detect immediate repeats
   let lastToolCall: { name: string; args: string } | null = null;
   
   // Count consecutive stop messages sent (to force exit if model keeps looping)
   let consecutiveStopMessages = 0;
-  
-  // Scan history for previously read files
-  for (const msg of history) {
-    if (msg.role === 'assistant' && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
-        if (tc.name === 'read' && tc.arguments?.path) {
-          filesReadThisSession.add(String(tc.arguments.path));
-        }
-      }
-    }
-  }
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal?.aborted) {
@@ -139,11 +129,11 @@ export const runAgentLoop = async ({
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    // Check for duplicate file read
+    // Check for duplicate file read (only within this agent loop run)
     const toolCall = extracted.toolCall;
     if (toolCall.name === 'read' && toolCall.arguments?.path) {
       const filePath = String(toolCall.arguments.path);
-      if (filesReadThisSession.has(filePath)) {
+      if (filesReadThisRun.has(filePath)) {
         consecutiveStopMessages++;
         
         // If model keeps looping despite STOP messages, break out
@@ -155,22 +145,24 @@ export const runAgentLoop = async ({
         const originalUserMsg = history.find(m => m.role === 'user')?.content ?? 'the user';
         
         // Don't execute - force model to respond with content it already has
+        // Mark as hidden so it doesn't show up in the UI
         const forceResponseMessage: Message = {
-          role: 'user',
+          role: 'system',
           content: `STOP - You already read "${filePath}" earlier. The file content is in the conversation history above.
 
 DO NOT call read again. The content is: Look in the conversation history for [FILE: ${filePath}] or the tool result.
 
 ANSWER THIS NOW using the file content you already have: "${originalUserMsg}"
 
-Write your response now:`
+Write your response now:`,
+          hidden: true
         };
         history.push(forceResponseMessage);
         callbacks?.onMessageAdded?.(forceResponseMessage);
         continue;
       }
-      // Track this read
-      filesReadThisSession.add(filePath);
+      // Track this read within the current run
+      filesReadThisRun.add(filePath);
       consecutiveStopMessages = 0; // Reset on successful tool execution
     }
     
@@ -188,8 +180,9 @@ Write your response now:`
       const originalUserMsg = history.find(m => m.role === 'user')?.content ?? 'the user';
       
       // Model is repeating the same tool call - force a response
+      // Mark as hidden so it doesn't show up in the UI
       const forceResponseMessage: Message = {
-        role: 'user',
+        role: 'system',
         content: `STOP - You already called "${toolCall.name}" and got a result. The data is in the conversation history above.
 
 DO NOT:
@@ -202,7 +195,8 @@ ANSWER THIS NOW: "${originalUserMsg}"
 If the tool returned an empty list [], say "no files found" or "the folder is empty".
 If the tool returned data, summarize it for the user.
 
-Write your response now:`
+Write your response now:`,
+        hidden: true
       };
       history.push(forceResponseMessage);
       callbacks?.onMessageAdded?.(forceResponseMessage);

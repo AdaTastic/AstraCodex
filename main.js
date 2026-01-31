@@ -92,58 +92,11 @@ var RuleManager = class {
 
 // promptBuilder.ts
 var HEADER_REMINDER = `RESPONSE FORMAT:
-
-If you need to think through your reasoning, wrap it in <think>...</think> tags:
-<think>
-Your internal reasoning here...
-</think>
-Your user-facing response here.
-
-Everything OUTSIDE <think> tags is shown directly to the user.
-IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
-
-TOOL CALLS:
-To use a tool, output a tool_call block:
-
-<tool_call>
-{"name": "read", "arguments": {"path": "file.md"}}
-</tool_call>
-
-Rules:
+- Use <think>...</think> tags for internal reasoning (both tags required)
+- Everything outside <think> tags is shown to the user
+- For tools, use <tool_call>{"name": "...", "arguments": {...}}</tool_call>
 - Output AT MOST ONE tool block per response
-- Do NOT include tool blocks inside <think> tags
-- Tool results will be added to conversation history automatically
-- You will be called again after each tool execution to see the result
-
-CRITICAL - AFTER RECEIVING TOOL RESULTS:
-- Look at the tool results in the conversation history (role: "tool" messages)
-- If the results answer the user's question, RESPOND IN NATURAL LANGUAGE
-- Do NOT repeat the same tool call - you already have the data
-- Example: User asks "what files are in notes?", you call list, get ["notes/a.md", "notes/b.md"]
-  \u2192 Respond: "The notes folder contains a.md and b.md." (NOT another list call)
-
-CRITICAL FILE READING RULES:
-1. NEVER re-read a file that was already read - check Conversation History for [FILE: path] entries
-2. If user gives an ambiguous filename (no path), call \`list\` first to find the full path
-3. Only call \`read\` after you have a specific vault path from list results
-
-MULTI-STEP TASKS:
-- For read-only operations: complete all reads, then respond
-- For write operations: ALWAYS ask for confirmation before writing/appending
-- Show the user what you plan to write and ask: "Shall I proceed with this change?"
-- Only execute write/append after user confirms
-
-WRITE SAFETY:
-- NEVER write or append without explicit user confirmation
-- After reading a file, describe your planned changes and wait for approval
-- Use \`append\` for adding content to existing files
-- Use \`write\` for creating new files or replacing entire content
-
-ERROR HANDLING:
-- If a tool returns "ERROR:", acknowledge the error and try alternatives
-- If asked to fallback to another file, do so automatically
-
-Your response should be clean and conversational.
+- After receiving tool results, respond in natural language - don't repeat tool calls
 `;
 var clamp = (value, maxChars) => {
   if (maxChars <= 0) return "";
@@ -162,6 +115,7 @@ var buildPrompt = ({
   selection,
   tools
 }) => {
+  const historyEndsWithToolResult = (history == null ? void 0 : history.includes('"role": "tool"')) && history.trim().endsWith("}") && history.lastIndexOf('"role": "tool"') > history.lastIndexOf('"role": "user"');
   const contextSections = [];
   const headerSection = HEADER_REMINDER.trim();
   contextSections.push(`Charter:
@@ -201,8 +155,13 @@ ${activeNote}`);
     contextSections.push(`Selection:
 ${selection}`);
   }
-  const userRequestSection = `User Request:
+  let userRequestSection = `User Request:
 ${userMessage}`;
+  if (historyEndsWithToolResult) {
+    userRequestSection += `
+
+\u26A0\uFE0F TOOL RESULT AVAILABLE - You already called a tool and received data above. DO NOT call the same tool again. Respond to the user in natural language using the data you received.`;
+  }
   const maxLength = settings.maxContextChars;
   if (maxLength <= 0) return "";
   const contextCombined = [headerSection, ...contextSections].join("\n\n");
@@ -793,31 +752,24 @@ var runAgentLoop = async ({
   callbacks,
   signal
 }) => {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
   let lastResponse = null;
-  const filesReadThisSession = /* @__PURE__ */ new Set();
-  for (const msg of history) {
-    if (msg.role === "assistant" && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
-        if (tc.name === "read" && ((_a = tc.arguments) == null ? void 0 : _a.path)) {
-          filesReadThisSession.add(String(tc.arguments.path));
-        }
-      }
-    }
-  }
+  const filesReadThisRun = /* @__PURE__ */ new Set();
+  let lastToolCall = null;
+  let consecutiveStopMessages = 0;
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    (_b = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _b.call(callbacks, { turn, history });
+    (_a = callbacks == null ? void 0 : callbacks.onTurnStart) == null ? void 0 : _a.call(callbacks, { turn, history });
     const prompt = buildPrompt2(history);
     const assistantMessage = {
       role: "assistant",
       content: ""
     };
     history.push(assistantMessage);
-    (_c = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _c.call(callbacks, assistantMessage);
-    (_d = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _d.call(callbacks);
+    (_b = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _b.call(callbacks, assistantMessage);
+    (_c = callbacks == null ? void 0 : callbacks.onAssistantStart) == null ? void 0 : _c.call(callbacks);
     let streamed = "";
     const response = await model.generateStream(
       prompt,
@@ -830,19 +782,19 @@ var runAgentLoop = async ({
       { signal }
     );
     lastResponse = response;
-    (_e = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _e.call(callbacks, response.header);
+    (_d = callbacks == null ? void 0 : callbacks.onHeader) == null ? void 0 : _d.call(callbacks, response.header);
     assistantMessage.content = response.text;
     const extracted = extractFencedToolCall(response.text);
     if (extracted && !isExtractionError(extracted)) {
       const toolCallInfo = {
         name: extracted.toolCall.name,
-        arguments: (_f = extracted.toolCall.arguments) != null ? _f : {}
+        arguments: (_e = extracted.toolCall.arguments) != null ? _e : {}
       };
       assistantMessage.tool_calls = [toolCallInfo];
     }
     if (!extracted) break;
     if (isExtractionError(extracted)) {
-      (_g = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _g.call(callbacks, { error: extracted.error });
+      (_f = callbacks == null ? void 0 : callbacks.onToolError) == null ? void 0 : _f.call(callbacks, { error: extracted.error });
       const errorMessage = {
         role: "user",
         content: `ERROR: ${extracted.error}
@@ -850,36 +802,81 @@ var runAgentLoop = async ({
 Please try again with exactly ONE tool block.`
       };
       history.push(errorMessage);
-      (_h = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _h.call(callbacks, errorMessage);
+      (_g = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _g.call(callbacks, errorMessage);
       continue;
     }
     if (signal == null ? void 0 : signal.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
     const toolCall = extracted.toolCall;
-    if (toolCall.name === "read" && ((_i = toolCall.arguments) == null ? void 0 : _i.path)) {
+    if (toolCall.name === "read" && ((_h = toolCall.arguments) == null ? void 0 : _h.path)) {
       const filePath = String(toolCall.arguments.path);
-      if (filesReadThisSession.has(filePath)) {
-        const hintMessage = {
-          role: "user",
-          content: `NOTE: File "${filePath}" was already read earlier in this conversation. The content is in the history above. Please use that content instead of re-reading.`
+      if (filesReadThisRun.has(filePath)) {
+        consecutiveStopMessages++;
+        if (consecutiveStopMessages >= 3) {
+          break;
+        }
+        const originalUserMsg = (_j = (_i = history.find((m) => m.role === "user")) == null ? void 0 : _i.content) != null ? _j : "the user";
+        const forceResponseMessage = {
+          role: "system",
+          content: `STOP - You already read "${filePath}" earlier. The file content is in the conversation history above.
+
+DO NOT call read again. The content is: Look in the conversation history for [FILE: ${filePath}] or the tool result.
+
+ANSWER THIS NOW using the file content you already have: "${originalUserMsg}"
+
+Write your response now:`,
+          hidden: true
         };
-        history.push(hintMessage);
-        (_j = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _j.call(callbacks, hintMessage);
+        history.push(forceResponseMessage);
+        (_k = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _k.call(callbacks, forceResponseMessage);
         continue;
       }
-      filesReadThisSession.add(filePath);
+      filesReadThisRun.add(filePath);
+      consecutiveStopMessages = 0;
     }
+    const currentToolKey = `${toolCall.name}:${JSON.stringify((_l = toolCall.arguments) != null ? _l : {})}`;
+    if (lastToolCall && lastToolCall.name === toolCall.name && lastToolCall.args === JSON.stringify((_m = toolCall.arguments) != null ? _m : {})) {
+      consecutiveStopMessages++;
+      if (consecutiveStopMessages >= 3) {
+        break;
+      }
+      const originalUserMsg = (_o = (_n = history.find((m) => m.role === "user")) == null ? void 0 : _n.content) != null ? _o : "the user";
+      const forceResponseMessage = {
+        role: "system",
+        content: `STOP - You already called "${toolCall.name}" and got a result. The data is in the conversation history above.
+
+DO NOT:
+- Call any more tools
+- Create files
+- Do anything except answer the question
+
+ANSWER THIS NOW: "${originalUserMsg}"
+
+If the tool returned an empty list [], say "no files found" or "the folder is empty".
+If the tool returned data, summarize it for the user.
+
+Write your response now:`,
+        hidden: true
+      };
+      history.push(forceResponseMessage);
+      (_p = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _p.call(callbacks, forceResponseMessage);
+      lastToolCall = null;
+      continue;
+    }
+    lastToolCall = { name: toolCall.name, args: JSON.stringify((_q = toolCall.arguments) != null ? _q : {}) };
+    consecutiveStopMessages = 0;
     const executed = await executeToolCall(toolRunner, toolCall);
-    (_k = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _k.call(callbacks, { name: executed.name, result: executed.result });
+    (_r = callbacks == null ? void 0 : callbacks.onToolResult) == null ? void 0 : _r.call(callbacks, { name: executed.name, result: executed.result });
+    const resultContent = typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2);
     const toolResultMessage = {
       role: "tool",
-      content: typeof executed.result === "string" ? executed.result : JSON.stringify(executed.result, null, 2),
+      content: resultContent,
       tool_result: executed.result,
       tool_call_id: `${turn}-${executed.name}`
     };
     history.push(toolResultMessage);
-    (_l = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _l.call(callbacks, toolResultMessage);
+    (_s = callbacks == null ? void 0 : callbacks.onMessageAdded) == null ? void 0 : _s.call(callbacks, toolResultMessage);
   }
   if (!lastResponse) {
     throw new Error("Agent loop did not produce a model response");
@@ -1088,6 +1085,7 @@ var renderMessages = (messages, transcriptEl, onToggleHeader, onToggleThink, opt
   transcriptEl.empty();
   messages.forEach((msg, index) => {
     var _a, _b, _c, _d, _e;
+    if (msg.hidden) return;
     const row = transcriptEl.createDiv({ cls: ["agentic-chat-row", `role-${msg.role}`] });
     const bubble = row.createDiv({ cls: "agentic-chat-bubble" });
     const label = msg.role === "user" ? "You" : msg.role === "assistant" ? "Assistant" : "System";
@@ -1613,6 +1611,7 @@ ${pending.preview.after}`);
   async ensureBaseRulesLoaded() {
     if (this.loadedRules.tool_protocol) return;
     const base = await this.ruleManager.loadRules([
+      "response_format",
       "tool_protocol",
       "file_inspection",
       "rules_index",

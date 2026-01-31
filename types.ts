@@ -70,6 +70,8 @@ export interface Message {
   tool_call_id?: string;
   
   // UI-only fields (not sent to model, used for rendering)
+  /** If true, message is hidden from UI but still in conversation history */
+  hidden?: boolean;
   /** Activity line (e.g., "reading: file.md") */
   activityLine?: string | null;
   /** Think block expanded state */

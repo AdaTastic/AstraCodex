@@ -22,6 +22,9 @@ export const renderMessages = (
   (transcriptEl as any).empty();
   
   messages.forEach((msg, index) => {
+    // Skip hidden messages (internal control messages like STOP prompts)
+    if (msg.hidden) return;
+    
     const row = (transcriptEl as any).createDiv({ cls: ['agentic-chat-row', `role-${msg.role}`] });
     const bubble = row.createDiv({ cls: 'agentic-chat-bubble' });
     const label = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : 'System';
