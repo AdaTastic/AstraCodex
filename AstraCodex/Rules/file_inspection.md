@@ -4,7 +4,7 @@ Use this workflow whenever the user asks to:
 - read a file
 - open/view a note
 - summarize a note
-- "what's in <note name>?"
+- "what's in 'note name'?"
 
 ## Workflow
 
@@ -64,15 +64,33 @@ Use this workflow whenever the user asks to:
 
 When the user asks to read multiple files (e.g., "read all chapters", "read files X, Y, and Z", "summarize these notes"):
 
-1. **Read ALL files before responding** - do NOT summarize or give a final answer until every requested file has been read
+1. Find the files using list
 2. **Read one file per turn** - call `read` for each file sequentially
 3. **Track progress** - after each read, identify which files remain and continue to the next
 4. **Only respond after all files are read** - the user expects a combined summary/response based on ALL the content
 
 **Example flow for reading multiple files:**
-- Turn 1: `read("folder/doc1.md")` → receive content
-- Turn 2: `read("folder/doc2.md")` → receive content  
-- Turn 3: `read("folder/doc3.md")` → receive content
+- Turn 1: 
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "note1.md"}}
+</tool_call>
+``` 
+→ receive content
+- Turn 3: 
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "note2.md"}}
+</tool_call>
+``` 
+→ receive content
+- Turn 3: 
+```xml
+<tool_call>
+{"name": "read", "arguments": {"path": "note3.md"}}
+</tool_call>
+``` 
+→ receive content
 - Turn 4: Now respond with combined summary using all files
 
 **WRONG:** Reading one file and immediately summarizing
