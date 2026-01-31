@@ -1,5 +1,33 @@
 # Tool Protocol
 
+## ⚠️ CRITICAL: One Tool Per Response
+
+**NEVER output multiple `<tool_call>` blocks in a single response.**
+
+Only the LAST tool block is executed - all others are LOST.
+
+❌ **WRONG** - Multiple tool calls (first one is IGNORED):
+```xml
+<tool_call>
+{"name": "list", "arguments": {"prefix": "notes/"}}
+</tool_call>
+
+<tool_call>
+{"name": "read", "arguments": {"path": "notes/file.md"}}
+</tool_call>
+```
+
+✅ **CORRECT** - One tool, wait for result, then decide:
+```xml
+<tool_call>
+{"name": "list", "arguments": {"prefix": "notes/"}}
+</tool_call>
+```
+
+Then after receiving the list result, call read in your NEXT response.
+
+---
+
 ## Tool Call Format
 
 To use a tool, output a `<tool_call>` block with JSON inside:

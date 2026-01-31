@@ -229,15 +229,9 @@ Write your response now:`
     history.push(toolResultMessage);
     callbacks?.onMessageAdded?.(toolResultMessage);
 
-    // Add a nudge for read operations to encourage the model to respond with the content
-    if (toolCall.name === 'read' && !resultContent.startsWith('ERROR')) {
-      const nudgeMessage: Message = {
-        role: 'user',
-        content: `Tool result received. Now respond to the user using the data above. DO NOT call any more tools - just answer with the information you have.`
-      };
-      history.push(nudgeMessage);
-      callbacks?.onMessageAdded?.(nudgeMessage);
-    }
+    // Note: We removed the nudge after read operations because it was blocking
+    // multi-file operations (e.g., "read all chapters and summarize").
+    // The model should decide when it has enough information to respond.
 
     // Loop continues - model will see tool result and decide next action
   }

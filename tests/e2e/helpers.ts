@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } fr
 import { vi } from 'vitest';
 import { join } from 'path';
 import { DEFAULT_SETTINGS, type AstraCodexSettings } from '../../settings';
-import { ModelClient } from '../../modelClient';
+import { ModelClient, type ModelResponse } from '../../modelClient';
+import type { AgentLoopModel } from '../../agentLoop';
 import { buildPrompt } from '../../promptBuilder';
 import { buildConversationHistory } from '../../conversationHistory';
 import type { Message } from '../../types';
@@ -67,6 +68,57 @@ export const createMockVault = (files: Record<string, string> = {}) => {
 export type MockVault = ReturnType<typeof createMockVault>;
 
 /**
+ * Wrap a model client with output length limiting for faster tests.
+ * Aborts streaming early if output exceeds maxChars.
+ */
+export const createLimitedModel = (
+  model: ModelClient,
+  maxChars: number = 4000
+): AgentLoopModel => {
+  return {
+    generateStream: async (prompt, onDelta, opts) => {
+      const controller = new AbortController();
+      const originalSignal = opts?.signal;
+      
+      // Abort if original signal aborts
+      if (originalSignal) {
+        originalSignal.addEventListener('abort', () => controller.abort());
+      }
+      
+      let totalChars = 0;
+      let fullText = '';
+      
+      const wrappedOnDelta = (delta: string) => {
+        totalChars += delta.length;
+        fullText += delta;
+        onDelta(delta);
+        
+        // Abort if we exceed max chars
+        if (totalChars > maxChars) {
+          controller.abort();
+        }
+      };
+      
+      try {
+        const response = await model.generateStream(prompt, wrappedOnDelta, {
+          signal: controller.signal
+        });
+        return response;
+      } catch (err) {
+        // If aborted due to length limit, return what we have
+        if (controller.signal.aborted && totalChars > maxChars) {
+          return {
+            text: fullText,
+            header: { state: 'idle', needsConfirmation: false }
+          } as ModelResponse;
+        }
+        throw err;
+      }
+    }
+  };
+};
+
+/**
  * Create a mock ToolRunner that uses the mock vault.
  */
 export const createMockToolRunner = (vault: MockVault): ToolRunner => {
@@ -85,8 +137,38 @@ export const createMockToolRunner = (vault: MockVault): ToolRunner => {
           return { success: true };
         case 'active_file':
           return { path: 'test-active-file.md', content: '# Active File' };
-        case 'line_edit':
-          return { success: true };
+        case 'line_edit': {
+          const path = args.path as string;
+          const startLine = args.startLine as number;
+          const endLine = args.endLine as number;
+          const replacement = (args.replacement ?? args.newContent ?? '') as string;
+          
+          const content = vault.files[path];
+          if (content === undefined) {
+            return { error: `File not found: ${path}` };
+          }
+          
+          const lines = content.split(/\r?\n/);
+          const startIdx = Math.max(1, startLine) - 1;
+          const endIdx = Math.min(lines.length, endLine) - 1;
+          const before = lines.slice(startIdx, endIdx + 1).join('\n');
+          
+          const updatedLines = [
+            ...lines.slice(0, startIdx),
+            ...replacement.split(/\r?\n/),
+            ...lines.slice(endIdx + 1)
+          ];
+          const updatedContent = updatedLines.join('\n');
+          
+          // Update the file in the mock vault
+          vault.files[path] = updatedContent;
+          
+          return {
+            path,
+            preview: { startLine, endLine, before, after: replacement },
+            success: true
+          };
+        }
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
