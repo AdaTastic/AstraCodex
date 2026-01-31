@@ -43,13 +43,20 @@ To use a tool, output a `<tool_call>` block with JSON inside:
 2. The system executes the tool
 3. The tool result is added to conversation history as a `role: "tool"` message
 4. You are called again with the updated history
-5. You see the result and decide: output another tool call, or provide final answer
+5. You see the result and decide: output another tool call, OR provide your final answer in natural language
 6. Loop continues until you respond without a `<tool_call>` block
+
+**CRITICAL: When to Stop Using Tools**
+- After receiving tool results that answer the user's question, **RESPOND IN NATURAL LANGUAGE**
+- Do NOT repeat the same tool call if you already have the information you need
+- Your response should be a helpful answer to the user, not another tool call
+- Example: If user asks "what files are in notes?" and you get `["notes/daily.md", "notes/weekly.md"]`, respond with: "The notes folder contains daily.md and weekly.md."
 
 **Important:**
 - Output AT MOST ONE tool block per response
 - Do NOT output multiple tool calls - only the last one will be executed
 - Tool results appear automatically in your conversation history
+- After seeing tool results, provide a natural language answer - don't loop!
 
 ## Safety
 

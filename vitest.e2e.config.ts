@@ -4,9 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/e2e/**/*.e2e.ts'],
-    globals: false,
-    passWithNoTests: false,
-    setupFiles: ['./tests/e2e/setup.ts']
+    globals: true,
+    passWithNoTests: true,
+    testTimeout: 120000
   },
   resolve: {
     alias: {

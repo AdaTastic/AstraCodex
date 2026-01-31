@@ -14,5 +14,5 @@
     "jsxFragmentFactory": "React.Fragment",
     "types": ["node", "obsidian", "vitest/globals"]
   },
-  "include": ["./*.ts", "./*.tsx", "tests/*.ts"]
+  "include": ["./*.ts", "./*.tsx", "tests/**/*.ts"]
 }
