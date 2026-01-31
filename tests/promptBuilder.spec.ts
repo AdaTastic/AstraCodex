@@ -27,16 +27,13 @@ describe('PromptBuilder', () => {
       coreRules
     });
 
-    // New simplified format - no STATE/NEEDS_CONFIRMATION/FINAL headers
+    // Simplified header - detailed rules are in AstraCodex/Rules/*.md files
     expect(prompt).toContain('RESPONSE FORMAT:');
     expect(prompt).toContain('<think>');
     expect(prompt).toContain('</think>');
-    expect(prompt).toContain('TOOL CALLS:');
     expect(prompt).toContain('<tool_call>');
-    expect(prompt).toContain('FILE READING GUIDANCE:');
     // Still includes core rules
     expect(prompt).toContain('CHARTER');
-    expect(prompt).toContain('STATES');
     expect(prompt).toContain('VOICE');
     expect(prompt).toContain('User Request:');
     expect(prompt).toContain('hello');

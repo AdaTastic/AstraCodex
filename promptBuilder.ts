@@ -15,52 +15,13 @@ interface PromptInput {
   tools?: Array<{ name: string; description: string; params?: Record<string, string> }>;
 }
 
+// Minimal header - detailed rules are in AstraCodex/Rules/*.md files
 const HEADER_REMINDER = `RESPONSE FORMAT:
-
-If you need to think through your reasoning, wrap it in <think>...</think> tags:
-<think>
-Your internal reasoning here...
-</think>
-Your user-facing response here.
-
-Everything OUTSIDE <think> tags is shown directly to the user.
-IMPORTANT: Always include BOTH <think> and </think> tags if you use them.
-
-TOOL CALLS:
-To use a tool, output a tool_call block:
-
-<tool_call>
-{"name": "read", "arguments": {"path": "file.md"}}
-</tool_call>
-
-Rules:
+- Use <think>...</think> tags for internal reasoning (both tags required)
+- Everything outside <think> tags is shown to the user
+- For tools, use <tool_call>{"name": "...", "arguments": {...}}</tool_call>
 - Output AT MOST ONE tool block per response
-- Do NOT include tool blocks inside <think> tags
-- Tool results will be added to conversation history automatically
-- You will be called again after each tool execution to see the result
-
-CRITICAL FILE READING RULES:
-1. NEVER re-read a file that was already read - check Conversation History for [FILE: path] entries
-2. If user gives an ambiguous filename (no path), call \`list\` first to find the full path
-3. Only call \`read\` after you have a specific vault path from list results
-
-MULTI-STEP TASKS:
-- For read-only operations: complete all reads, then respond
-- For write operations: ALWAYS ask for confirmation before writing/appending
-- Show the user what you plan to write and ask: "Shall I proceed with this change?"
-- Only execute write/append after user confirms
-
-WRITE SAFETY:
-- NEVER write or append without explicit user confirmation
-- After reading a file, describe your planned changes and wait for approval
-- Use \`append\` for adding content to existing files
-- Use \`write\` for creating new files or replacing entire content
-
-ERROR HANDLING:
-- If a tool returns "ERROR:", acknowledge the error and try alternatives
-- If asked to fallback to another file, do so automatically
-
-Your response should be clean and conversational.
+- After receiving tool results, respond in natural language - don't repeat tool calls
 `;
 
 const clamp = (value: string, maxChars: number): string => {
@@ -81,6 +42,11 @@ export const buildPrompt = ({
   selection,
   tools
 }: PromptInput): string => {
+  // Detect if the conversation ends with a tool result
+  const historyEndsWithToolResult = history?.includes('"role": "tool"') && 
+    history.trim().endsWith('}') &&
+    history.lastIndexOf('"role": "tool"') > history.lastIndexOf('"role": "user"');
+  
   const contextSections: string[] = [];
   const headerSection = HEADER_REMINDER.trim();
 
@@ -128,7 +94,11 @@ export const buildPrompt = ({
     contextSections.push(`Selection:\n${selection}`);
   }
 
-  const userRequestSection = `User Request:\n${userMessage}`;
+  // Build user request section with tool result reminder if needed
+  let userRequestSection = `User Request:\n${userMessage}`;
+  if (historyEndsWithToolResult) {
+    userRequestSection += `\n\n⚠️ TOOL RESULT AVAILABLE - You already called a tool and received data above. DO NOT call the same tool again. Respond to the user in natural language using the data you received.`;
+  }
   // Prefer the explicit maxContextChars budget. The context slider controls it indirectly,
   // but we must ensure the model actually sees Rules/Tools.
   const maxLength = settings.maxContextChars;

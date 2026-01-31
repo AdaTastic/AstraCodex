@@ -456,6 +456,7 @@ export class AgenticChatView extends ItemView {
   private async ensureBaseRulesLoaded() {
     if (this.loadedRules.tool_protocol) return;
     const base = await this.ruleManager.loadRules([
+      'response_format',
       'tool_protocol',
       'file_inspection',
       'rules_index',

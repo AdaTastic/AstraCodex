@@ -56,6 +56,12 @@ export const runAgentLoop = async ({
   // Track files already read to prevent re-reading
   const filesReadThisSession = new Set<string>();
   
+  // Track last tool call to detect immediate repeats
+  let lastToolCall: { name: string; args: string } | null = null;
+  
+  // Count consecutive stop messages sent (to force exit if model keeps looping)
+  let consecutiveStopMessages = 0;
+  
   // Scan history for previously read files
   for (const msg of history) {
     if (msg.role === 'assistant' && msg.tool_calls) {
@@ -138,34 +144,100 @@ export const runAgentLoop = async ({
     if (toolCall.name === 'read' && toolCall.arguments?.path) {
       const filePath = String(toolCall.arguments.path);
       if (filesReadThisSession.has(filePath)) {
-        // Don't execute - inject hint and let model continue
-        const hintMessage: Message = {
+        consecutiveStopMessages++;
+        
+        // If model keeps looping despite STOP messages, break out
+        if (consecutiveStopMessages >= 3) {
+          break;
+        }
+        
+        // Find the original user question to remind the model
+        const originalUserMsg = history.find(m => m.role === 'user')?.content ?? 'the user';
+        
+        // Don't execute - force model to respond with content it already has
+        const forceResponseMessage: Message = {
           role: 'user',
-          content: `NOTE: File "${filePath}" was already read earlier in this conversation. The content is in the history above. Please use that content instead of re-reading.`
+          content: `STOP - You already read "${filePath}" earlier. The file content is in the conversation history above.
+
+DO NOT call read again. The content is: Look in the conversation history for [FILE: ${filePath}] or the tool result.
+
+ANSWER THIS NOW using the file content you already have: "${originalUserMsg}"
+
+Write your response now:`
         };
-        history.push(hintMessage);
-        callbacks?.onMessageAdded?.(hintMessage);
+        history.push(forceResponseMessage);
+        callbacks?.onMessageAdded?.(forceResponseMessage);
         continue;
       }
       // Track this read
       filesReadThisSession.add(filePath);
+      consecutiveStopMessages = 0; // Reset on successful tool execution
     }
+    
+    // Check for immediately repeated tool call (model looping)
+    const currentToolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments ?? {})}`;
+    if (lastToolCall && lastToolCall.name === toolCall.name && lastToolCall.args === JSON.stringify(toolCall.arguments ?? {})) {
+      consecutiveStopMessages++;
+      
+      // If model keeps looping despite STOP messages, break out
+      if (consecutiveStopMessages >= 3) {
+        break;
+      }
+      
+      // Find the original user question to remind the model
+      const originalUserMsg = history.find(m => m.role === 'user')?.content ?? 'the user';
+      
+      // Model is repeating the same tool call - force a response
+      const forceResponseMessage: Message = {
+        role: 'user',
+        content: `STOP - You already called "${toolCall.name}" and got a result. The data is in the conversation history above.
+
+DO NOT:
+- Call any more tools
+- Create files
+- Do anything except answer the question
+
+ANSWER THIS NOW: "${originalUserMsg}"
+
+If the tool returned an empty list [], say "no files found" or "the folder is empty".
+If the tool returned data, summarize it for the user.
+
+Write your response now:`
+      };
+      history.push(forceResponseMessage);
+      callbacks?.onMessageAdded?.(forceResponseMessage);
+      lastToolCall = null; // Reset to allow one more attempt
+      continue;
+    }
+    lastToolCall = { name: toolCall.name, args: JSON.stringify(toolCall.arguments ?? {}) };
+    consecutiveStopMessages = 0; // Reset on new tool call
 
     // Execute tool
     const executed = await executeToolCall(toolRunner, toolCall);
     callbacks?.onToolResult?.({ name: executed.name, result: executed.result });
 
     // Add tool result to history as role:"tool" message (OpenAI format)
+    const resultContent = typeof executed.result === 'string' 
+      ? executed.result 
+      : JSON.stringify(executed.result, null, 2);
     const toolResultMessage: Message = {
       role: 'tool',
-      content: typeof executed.result === 'string' 
-        ? executed.result 
-        : JSON.stringify(executed.result, null, 2),
+      content: resultContent,
       tool_result: executed.result,
       tool_call_id: `${turn}-${executed.name}`
     };
     history.push(toolResultMessage);
     callbacks?.onMessageAdded?.(toolResultMessage);
+
+    // Add a nudge for read operations to encourage the model to respond with the content
+    if (toolCall.name === 'read' && !resultContent.startsWith('ERROR')) {
+      const nudgeMessage: Message = {
+        role: 'user',
+        content: `Tool result received. Now respond to the user using the data above. DO NOT call any more tools - just answer with the information you have.`
+      };
+      history.push(nudgeMessage);
+      callbacks?.onMessageAdded?.(nudgeMessage);
+    }
 
     // Loop continues - model will see tool result and decide next action
   }

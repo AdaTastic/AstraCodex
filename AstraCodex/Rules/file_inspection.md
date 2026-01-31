@@ -43,8 +43,14 @@ Use this workflow whenever the user asks to:
    - Ask the user which file they mean and show 3-7 candidates.
    - Wait for clarification before reading.
 
-## Important
+## Critical File Reading Rules
 
-- Check conversation history for `[FILE: path]` entries before calling read again
-- Never re-read a file that was already read in the current conversation
-- After reading, summarize the content and ask the user what they want to do next
+1. **NEVER re-read a file that was already read** - check Conversation History for `[FILE: path]` entries or previous tool results
+2. **If user gives an ambiguous filename** (no path), call `list` first to find the full path
+3. **Only call `read` after you have a specific vault path** from list results
+
+## After Reading
+
+- Summarize the content for the user
+- Ask what they want to do next (if appropriate)
+- If the file was already read earlier in the conversation, reference that content instead of reading again

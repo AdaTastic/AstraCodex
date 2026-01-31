@@ -115,6 +115,13 @@ Rules:
 - Tool results will be added to conversation history automatically
 - You will be called again after each tool execution to see the result
 
+CRITICAL - AFTER RECEIVING TOOL RESULTS:
+- Look at the tool results in the conversation history (role: "tool" messages)
+- If the results answer the user's question, RESPOND IN NATURAL LANGUAGE
+- Do NOT repeat the same tool call - you already have the data
+- Example: User asks "what files are in notes?", you call list, get ["notes/a.md", "notes/b.md"]
+  \u2192 Respond: "The notes folder contains a.md and b.md." (NOT another list call)
+
 CRITICAL FILE READING RULES:
 1. NEVER re-read a file that was already read - check Conversation History for [FILE: path] entries
 2. If user gives an ambiguous filename (no path), call \`list\` first to find the full path
